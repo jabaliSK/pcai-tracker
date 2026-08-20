@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { IconAlert, IconClose } from "./Icons";
 
 const TYPE_OPTIONS = ["VPN", "Screen Share"];
 const METHOD_OPTIONS = ["Manual", "Automated"];
@@ -66,6 +67,12 @@ const CONNECTION_FIELDS = new Set([
   "vpn_details",
 ]);
 
+const TABS = [
+  { key: "testing", label: "Testing" },
+  { key: "connection", label: "Connection" },
+  { key: "orientation", label: "Orientation" },
+];
+
 export default function EngagementForm({ initial, options, onCancel, onSave }) {
   const [form, setForm] = useState(() => toForm(initial));
   const [activeTab, setActiveTab] = useState("testing");
@@ -81,6 +88,12 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
 
   const errors = useMemo(() => {
     const e = {};
@@ -166,6 +179,16 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
     return c.trim();
   }
 
+  // Label text, with a dot when the field is currently mandatory.
+  function Lbl({ name, children }) {
+    return (
+      <span className="lbl-text">
+        {children}
+        {mandatory.has(name) && <span className="req-dot" />}
+      </span>
+    );
+  }
+
   function submit(e) {
     e.preventDefault();
     if (Object.keys(errors).length > 0) {
@@ -203,78 +226,49 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
     onSave(payload);
   }
 
-  const testingHasErrors = Object.keys(errors).some(
-    (k) => !ORIENTATION_FIELDS.has(k) && !CONNECTION_FIELDS.has(k)
-  );
-  const connectionHasErrors = Object.keys(errors).some((k) =>
-    CONNECTION_FIELDS.has(k)
-  );
-  const orientationHasErrors = Object.keys(errors).some((k) =>
-    ORIENTATION_FIELDS.has(k)
-  );
+  const tabErrors = {
+    testing: Object.keys(errors).some(
+      (k) => !ORIENTATION_FIELDS.has(k) && !CONNECTION_FIELDS.has(k)
+    ),
+    connection: Object.keys(errors).some((k) => CONNECTION_FIELDS.has(k)),
+    orientation: Object.keys(errors).some((k) => ORIENTATION_FIELDS.has(k)),
+  };
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-head">
           <h3>{isEdit ? "Edit Engagement" : "New Engagement"}</h3>
           <button className="close" onClick={onCancel} aria-label="Close">
-            ×
+            <IconClose size={17} />
           </button>
         </div>
 
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="modal-form">
           <div className="modal-body">
             <div className="form-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "testing"}
-                className={
-                  "form-tab" + (activeTab === "testing" ? " active" : "")
-                }
-                onClick={() => setActiveTab("testing")}
-              >
-                Testing
-                {testingHasErrors && (
-                  <span className="tab-warn" aria-label="Missing fields">
-                    !
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "connection"}
-                className={
-                  "form-tab" + (activeTab === "connection" ? " active" : "")
-                }
-                onClick={() => setActiveTab("connection")}
-              >
-                Connection
-                {connectionHasErrors && (
-                  <span className="tab-warn" aria-label="Missing fields">
-                    !
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "orientation"}
-                className={
-                  "form-tab" +
-                  (activeTab === "orientation" ? " active" : "")
-                }
-                onClick={() => setActiveTab("orientation")}
-              >
-                Orientation
-                {orientationHasErrors && (
-                  <span className="tab-warn" aria-label="Missing fields">
-                    !
-                  </span>
-                )}
-              </button>
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === t.key}
+                  className={"form-tab" + (activeTab === t.key ? " active" : "")}
+                  onClick={() => setActiveTab(t.key)}
+                >
+                  {t.label}
+                  {tabErrors[t.key] && (
+                    <span className="tab-warn" aria-label="Missing fields">
+                      !
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
 
             <div
@@ -283,23 +277,25 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
             >
               <div className="section-divider">Engagement</div>
               <label>
-                Customer
+                <Lbl name="customer">Customer</Lbl>
                 <input
                   className={ctlCls("customer")}
                   value={form.customer}
+                  placeholder="Customer name"
                   onChange={(e) => set("customer", e.target.value)}
                 />
               </label>
               <label>
-                PM
+                <Lbl name="pm">PM</Lbl>
                 <input
                   className={ctlCls("pm")}
                   value={form.pm}
+                  placeholder="Project manager"
                   onChange={(e) => set("pm", e.target.value)}
                 />
               </label>
               <label>
-                Type
+                <Lbl name="type">Type</Lbl>
                 <select
                   className={ctlCls("type")}
                   value={form.type}
@@ -314,16 +310,17 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </select>
               </label>
               <label>
-                Tickets
+                <Lbl name="tickets">Tickets</Lbl>
                 <input
                   value={form.tickets}
+                  placeholder="Ticket reference"
                   onChange={(e) => set("tickets", e.target.value)}
                 />
               </label>
 
               <div className="section-divider">Testing</div>
               <label>
-                Testing Date
+                <Lbl name="testing_date">Testing Date</Lbl>
                 <input
                   className={ctlCls("testing_date")}
                   type="date"
@@ -332,7 +329,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 />
               </label>
               <label>
-                Testing Method
+                <Lbl name="testing_method">Testing Method</Lbl>
                 <select
                   value={form.testing_method}
                   onChange={(e) => set("testing_method", e.target.value)}
@@ -346,7 +343,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </select>
               </label>
               <label>
-                Testing Resource
+                <Lbl name="testing_resource">Testing Resource</Lbl>
                 <select
                   className={ctlCls("testing_resource")}
                   value={form.testing_resource}
@@ -367,7 +364,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </select>
               </label>
               <label>
-                Testing Status
+                <Lbl name="testing_status">Testing Status</Lbl>
                 <select
                   className={ctlCls("testing_status")}
                   value={form.testing_status}
@@ -388,7 +385,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </select>
               </label>
               <label>
-                Test Hrs (auto)
+                <Lbl name="testing_hours">Test Hrs (auto)</Lbl>
                 <input
                   type="number"
                   value={form.testing_hours}
@@ -400,10 +397,11 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
 
               <div className="section-divider">Notes</div>
               <label className="full">
-                Comments
+                <Lbl name="comments">Comments</Lbl>
                 <textarea
                   rows={3}
                   value={form.comments}
+                  placeholder="Anything worth remembering about this engagement…"
                   onChange={(e) => set("comments", e.target.value)}
                 />
               </label>
@@ -418,13 +416,14 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
               <div className="section-divider">Connection</div>
               {!form.type && (
                 <div className="hint">
+                  <IconAlert size={15} />
                   Select a Type on the Testing tab to enable the relevant
                   connection fields.
                 </div>
               )}
               {isScreenShare && (
                 <label className="full">
-                  Screen Share Resource
+                  <Lbl name="screen_share_resource">Screen Share Resource</Lbl>
                   <input
                     value={form.screen_share_resource}
                     onChange={(e) =>
@@ -434,7 +433,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </label>
               )}
               <label>
-                VPN App / IP
+                <Lbl name="vpn_app_ip">VPN App / IP</Lbl>
                 <input
                   className={ctlCls("vpn_app_ip")}
                   value={form.vpn_app_ip}
@@ -443,7 +442,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 />
               </label>
               <label>
-                VPN Username
+                <Lbl name="vpn_user">VPN Username</Lbl>
                 <input
                   className={ctlCls("vpn_user")}
                   value={form.vpn_user}
@@ -452,7 +451,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 />
               </label>
               <label>
-                VPN Password
+                <Lbl name="vpn_pass">VPN Password</Lbl>
                 <input
                   className={ctlCls("vpn_pass")}
                   value={form.vpn_pass}
@@ -461,7 +460,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 />
               </label>
               <label className="full">
-                VPN Details
+                <Lbl name="vpn_details">VPN Details</Lbl>
                 <textarea
                   className={ctlCls("vpn_details")}
                   rows={4}
@@ -481,7 +480,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
             >
               <div className="section-divider">Orientation</div>
               <label>
-                Orientation Date
+                <Lbl name="orientation_date">Orientation Date</Lbl>
                 <input
                   className={ctlCls("orientation_date")}
                   type="date"
@@ -490,7 +489,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 />
               </label>
               <label>
-                Orientation Resource
+                <Lbl name="orientation_resource">Orientation Resource</Lbl>
                 <input
                   className={ctlCls("orientation_resource")}
                   value={form.orientation_resource}
@@ -498,7 +497,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 />
               </label>
               <label>
-                Orientation Status
+                <Lbl name="orientation_status">Orientation Status</Lbl>
                 <select
                   value={form.orientation_status}
                   onChange={(e) => set("orientation_status", e.target.value)}
@@ -520,7 +519,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </select>
               </label>
               <label>
-                Orientation Hrs
+                <Lbl name="orientation_hours">Orientation Hrs</Lbl>
                 <input
                   className={ctlCls("orientation_hours")}
                   type="number"
@@ -530,7 +529,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 />
               </label>
               <label className="full">
-                Orientation Feedback
+                <Lbl name="orientation_feedback">Orientation Feedback</Lbl>
                 <textarea
                   className={ctlCls("orientation_feedback")}
                   rows={4}
@@ -549,7 +548,7 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
               Cancel
             </button>
             <button type="submit" className="btn btn-primary">
-              {isEdit ? "Save Changes" : "Create"}
+              {isEdit ? "Save Changes" : "Create Engagement"}
             </button>
           </div>
         </form>

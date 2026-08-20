@@ -69,3 +69,17 @@ class StatusEvent(BaseModel):
     id: int
     status: Optional[str] = None
     changed_at: Optional[datetime] = None
+
+
+class AuditLog(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: Optional[str] = None
+    action: Optional[str] = None
+    method: Optional[str] = None
+    path: Optional[str] = None
+    entity_type: Optional[str] = None
+    entity_uid: Optional[str] = None
+    status_code: Optional[int] = None
+    detail: Optional[str] = None
+    created_at: Optional[datetime] = None

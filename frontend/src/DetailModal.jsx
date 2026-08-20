@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { fmtDate } from "./format";
 import { getStatusEvents } from "./api";
+import { Avatar, Badge, fmtDuration } from "./ui";
+import { IconAlert, IconClose, IconEdit, IconTrash } from "./Icons";
 
-function Item({ label, value, full, missing }) {
+function Item({ label, value, full, missing, children }) {
   const empty = value === null || value === undefined || value === "";
   return (
     <div
@@ -11,10 +13,12 @@ function Item({ label, value, full, missing }) {
       }
     >
       <div className="k">
-        {missing && <span className="warn-mark">!</span>}
+        {missing && <IconAlert size={12} />}
         {label}
       </div>
-      <div className={"v" + (empty ? " empty" : "")}>{empty ? "—" : value}</div>
+      <div className={"v" + (empty && !children ? " empty" : "")}>
+        {children || (empty ? "—" : value)}
+      </div>
     </div>
   );
 }
@@ -25,13 +29,6 @@ function filled(v) {
 
 function isDone(s) {
   return String(s || "").toLowerCase() === "done";
-}
-
-function fmtHm(hours) {
-  const totalMin = Math.max(0, Math.round((Number(hours) || 0) * 60));
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
 }
 
 // Set of mandatory fields that are missing / inconsistent for this record.
@@ -58,6 +55,12 @@ function missingFields(r) {
   return m;
 }
 
+const TABS = [
+  { key: "testing", label: "Testing" },
+  { key: "connection", label: "Connection" },
+  { key: "orientation", label: "Orientation" },
+];
+
 export default function DetailModal({ record, onClose, onEdit, onDelete }) {
   const isVpn = String(record.type).toLowerCase() === "vpn";
   const miss = missingFields(record);
@@ -75,6 +78,12 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
     };
   }, [record.uid]);
 
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   function fmtTs(iso) {
     if (!iso) return "—";
     const d = new Date(iso);
@@ -83,54 +92,40 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-head">
           <h3>{record.customer}</h3>
+          <div className="detail-head-meta">
+            <Badge status={record.testing_status} fallback="" />
+            {record.type && <span className="badge badge-other">{record.type}</span>}
+          </div>
           <button className="close" onClick={onClose} aria-label="Close">
-            ×
+            <IconClose size={17} />
           </button>
         </div>
 
         <div className="modal-body">
           <div className="form-tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "testing"}
-              className={
-                "form-tab" + (activeTab === "testing" ? " active" : "")
-              }
-              onClick={() => setActiveTab("testing")}
-            >
-              Testing
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "connection"}
-              className={
-                "form-tab" + (activeTab === "connection" ? " active" : "")
-              }
-              onClick={() => setActiveTab("connection")}
-            >
-              Connection
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "orientation"}
-              className={
-                "form-tab" + (activeTab === "orientation" ? " active" : "")
-              }
-              onClick={() => setActiveTab("orientation")}
-            >
-              Orientation
-            </button>
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === t.key}
+                className={"form-tab" + (activeTab === t.key ? " active" : "")}
+                onClick={() => setActiveTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          <div
-            style={{ display: activeTab === "testing" ? "block" : "none" }}
-          >
+          <div style={{ display: activeTab === "testing" ? "block" : "none" }}>
             <div className="detail-grid">
               <div className="detail-section-title">Engagement</div>
               <Item label="Customer" value={record.customer} missing={mi("customer")} />
@@ -149,17 +144,28 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
                 label="Testing Resource"
                 value={record.testing_resource}
                 missing={mi("testing_resource")}
-              />
+              >
+                {record.testing_resource ? (
+                  <span className="res-cell">
+                    <Avatar name={record.testing_resource} />
+                    <span>{record.testing_resource}</span>
+                  </span>
+                ) : null}
+              </Item>
               <Item
                 label="Testing Status"
                 value={record.testing_status}
                 missing={mi("testing_status")}
-              />
+              >
+                {record.testing_status ? (
+                  <Badge status={record.testing_status} />
+                ) : null}
+              </Item>
               <Item
                 label="Testing Hours"
                 value={
                   record.testing_hours != null
-                    ? `${fmtHm(record.testing_hours)} (auto)`
+                    ? `${fmtDuration(record.testing_hours)} (auto)`
                     : record.testing_hours
                 }
                 missing={mi("testing_hours")}
@@ -171,7 +177,7 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
 
             <div className="detail-section-title">Testing Status History</div>
             {events.length === 0 ? (
-              <div className="muted" style={{ padding: "8px 0", textAlign: "left" }}>
+              <div className="muted" style={{ padding: "6px 0", fontSize: 13 }}>
                 No status changes recorded yet.
               </div>
             ) : (
@@ -243,7 +249,11 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
               <Item
                 label="Orientation Status"
                 value={record.orientation_status}
-              />
+              >
+                {record.orientation_status ? (
+                  <Badge status={record.orientation_status} />
+                ) : null}
+              </Item>
               <Item
                 label="Orientation Hours"
                 value={record.orientation_hours}
@@ -261,6 +271,7 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
 
         <div className="modal-actions">
           <button className="btn btn-danger" onClick={() => onDelete(record)}>
+            <IconTrash size={15} />
             Delete
           </button>
           <div className="spacer" />
@@ -268,6 +279,7 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
             Close
           </button>
           <button className="btn btn-primary" onClick={() => onEdit(record)}>
+            <IconEdit size={15} />
             Edit
           </button>
         </div>

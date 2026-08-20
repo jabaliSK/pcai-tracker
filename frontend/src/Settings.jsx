@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { getOptions, updateOptions } from "./api";
+import {
+  IconAlert,
+  IconArrowDown,
+  IconArrowUp,
+  IconCheck,
+  IconClose,
+  IconPlus,
+} from "./Icons";
 
 const CATEGORIES = [
   {
@@ -75,6 +83,7 @@ function OptionEditor({ meta, values, onSave }) {
     <div className="chart-card">
       <div className="chart-head">
         <h4>{meta.title}</h4>
+        <span className="chart-total">{list.length}</span>
         <span className="chart-sub">{meta.sub}</span>
       </div>
 
@@ -89,29 +98,32 @@ function OptionEditor({ meta, values, onSave }) {
             <div className="opt-actions">
               <button
                 type="button"
-                className="btn btn-sm"
+                className="btn"
                 onClick={() => move(i, -1)}
                 disabled={i === 0}
                 title="Move up"
+                aria-label="Move up"
               >
-                ↑
+                <IconArrowUp />
               </button>
               <button
                 type="button"
-                className="btn btn-sm"
+                className="btn"
                 onClick={() => move(i, 1)}
                 disabled={i === list.length - 1}
                 title="Move down"
+                aria-label="Move down"
               >
-                ↓
+                <IconArrowDown />
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-danger"
+                className="btn btn-danger"
                 onClick={() => remove(i)}
                 title="Remove"
+                aria-label="Remove"
               >
-                ×
+                <IconClose />
               </button>
             </div>
           </li>
@@ -135,12 +147,18 @@ function OptionEditor({ meta, values, onSave }) {
           }}
         />
         <button type="button" className="btn" onClick={add}>
-          + Add
+          <IconPlus size={15} />
+          Add
         </button>
       </div>
 
       <div className="opt-save">
-        {savedAt && <span className="opt-saved">Saved ✓</span>}
+        {savedAt && (
+          <span className="opt-saved">
+            <IconCheck size={14} />
+            Saved
+          </span>
+        )}
         <button
           type="button"
           className="btn btn-primary"
@@ -178,33 +196,44 @@ export default function Settings({ onChanged }) {
     return saved;
   }
 
-  if (loading) return <div className="content muted">Loading settings…</div>;
+  if (loading)
+    return (
+      <div className="content">
+        <div className="settings-grid">
+          {CATEGORIES.map((c) => (
+            <div className="chart-card" key={c.key}>
+              <span className="skel" style={{ width: "40%", height: 13 }} />
+              <div className="chart-empty" style={{ marginTop: 14 }}>
+                Loading settings…
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+
   if (error)
     return (
       <div className="content">
-        <div className="error-banner">{error}</div>
+        <div className="error-banner">
+          <IconAlert size={16} />
+          {error}
+        </div>
       </div>
     );
 
   return (
     <div className="content">
-      <div className="page-head">
-        <div>
-          <h2>Settings</h2>
-          <p className="subtitle">
-            Manage the dropdown values used across engagements.
-          </p>
-        </div>
+      <div className="settings-grid">
+        {CATEGORIES.map((meta) => (
+          <OptionEditor
+            key={meta.key}
+            meta={meta}
+            values={options[meta.key] || []}
+            onSave={handleSave}
+          />
+        ))}
       </div>
-
-      {CATEGORIES.map((meta) => (
-        <OptionEditor
-          key={meta.key}
-          meta={meta}
-          values={options[meta.key] || []}
-          onSave={handleSave}
-        />
-      ))}
     </div>
   );
 }

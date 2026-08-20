@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { fmtDate } from "./format";
 
 /* ---------- helpers ---------- */
@@ -16,6 +16,37 @@ const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+// Measure a container so charts fill the card instead of a fixed 720px box.
+function useWidth(fallback) {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0].contentRect.width;
+      if (w > 0) setWidth(Math.round(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+// Round the axis maximum up so the tick labels are distinct, round numbers.
+function niceMax(value, ticks) {
+  const v = Math.max(value, 0.0001);
+  if (v <= ticks) return ticks;
+  const raw = v / ticks;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].find((s) => s * mag >= raw) * mag;
+  return step * ticks;
+}
+
+function fmtTick(t) {
+  return Number.isInteger(t) ? String(t) : t.toFixed(1);
+}
 
 /* ---------- Calendar heatmap (GitHub-style) ---------- */
 export function CalendarHeatmap({
@@ -69,7 +100,7 @@ export function CalendarHeatmap({
   const cell = cellSize;
   const gap = 4;
   const step = cell + gap;
-  const leftPad = 36;
+  const leftPad = 34;
   const topPad = 20;
   const width = weeks.length * step + leftPad + 4;
   const height = 7 * step + topPad + 4;
@@ -88,33 +119,34 @@ export function CalendarHeatmap({
     }
   });
 
-  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayLabels = ["", "Mon", "", "Wed", "", "Fri", ""];
 
   return (
     <div className="chart-card">
       <div className="chart-head">
-        <h4>
-          {title} <span className="chart-total">({total})</span>
-        </h4>
+        <h4>{title}</h4>
+        <span className="chart-total">{total}</span>
         {subtitle && <span className="chart-sub">{subtitle}</span>}
       </div>
       <div className="hm-scroll">
         <svg width={width} height={height} className="heatmap">
           {monthLabels.map((m, i) => (
-            <text key={i} x={m.x} y={13} className="hm-axis">
+            <text key={i} x={m.x} y={12} className="hm-axis">
               {m.label}
             </text>
           ))}
-          {dayLabels.map((lbl, i) => (
-            <text
-              key={i}
-              x={0}
-              y={topPad + i * step + cell / 2 + 3}
-              className="hm-axis"
-            >
-              {lbl}
-            </text>
-          ))}
+          {dayLabels.map((lbl, i) =>
+            lbl ? (
+              <text
+                key={i}
+                x={0}
+                y={topPad + i * step + cell / 2 + 3}
+                className="hm-axis"
+              >
+                {lbl}
+              </text>
+            ) : null
+          )}
           {weeks.map((week, wi) =>
             week.map((day, di) => (
               <rect
@@ -123,7 +155,7 @@ export function CalendarHeatmap({
                 y={topPad + di * step}
                 width={cell}
                 height={cell}
-                rx={2}
+                rx={3}
                 className={"hm-cell " + level(day.count)}
               >
                 {day.count !== null && (
@@ -151,25 +183,18 @@ export function CalendarHeatmap({
 
 /* ---------- Line chart ---------- */
 export function LineChart({ points, title, subtitle, yLabel }) {
-  const W = 720;
-  const H = 260;
-  const pad = { top: 20, right: 20, bottom: 40, left: 44 };
+  const [cardRef, cardW] = useWidth(760);
+  // useId() contains colons, which are unsafe inside url(#…) references.
+  const gradId = "lcArea" + useId().replace(/:/g, "");
+
+  const W = Math.max(320, cardW - 42);
+  const H = 250;
+  const pad = { top: 16, right: 14, bottom: 42, left: 40 };
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
 
-  if (!points.length) {
-    return (
-      <div className="chart-card">
-        <div className="chart-head">
-          <h4>{title}</h4>
-          {subtitle && <span className="chart-sub">{subtitle}</span>}
-        </div>
-        <div className="chart-empty">No data to display.</div>
-      </div>
-    );
-  }
-
-  const maxY = Math.max(1, ...points.map((p) => p.value));
+  const ticks = 4;
+  const maxY = niceMax(Math.max(1, ...points.map((p) => p.value)), ticks);
   const n = points.length;
   const x = (i) => pad.left + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
   const y = (v) => pad.top + innerH - (v / maxY) * innerH;
@@ -183,23 +208,33 @@ export function LineChart({ points, title, subtitle, yLabel }) {
     points.map((p, i) => `L ${x(i)} ${y(p.value)}`).join(" ") +
     ` L ${x(n - 1)} ${pad.top + innerH} Z`;
 
-  // Y gridlines
-  const ticks = 4;
-  const yTicks = Array.from({ length: ticks + 1 }, (_, i) =>
-    Math.round((maxY / ticks) * i)
-  );
+  const yTicks = Array.from({ length: ticks + 1 }, (_, i) => (maxY / ticks) * i);
 
   // X labels — show at most ~8
   const labelEvery = Math.max(1, Math.ceil(n / 8));
 
   return (
-    <div className="chart-card">
+    <div className="chart-card" ref={cardRef}>
       <div className="chart-head">
         <h4>{title}</h4>
         {subtitle && <span className="chart-sub">{subtitle}</span>}
       </div>
-      <div className="chart-scroll">
-        <svg width={W} height={H} className="linechart">
+      {!points.length ? (
+        <div className="chart-empty">No data to display.</div>
+      ) : (
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          preserveAspectRatio="xMidYMid meet"
+          className="linechart"
+        >
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.26" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
           {yTicks.map((t, i) => (
             <g key={i}>
               <line
@@ -210,15 +245,15 @@ export function LineChart({ points, title, subtitle, yLabel }) {
                 className="lc-grid"
               />
               <text x={pad.left - 8} y={y(t) + 4} className="lc-axis lc-axis-y">
-                {t}
+                {fmtTick(t)}
               </text>
             </g>
           ))}
-          <path d={areaPath} className="lc-area" />
+          <path d={areaPath} fill={`url(#${gradId})`} stroke="none" />
           <path d={linePath} className="lc-line" />
           {points.map((p, i) => (
             <g key={i}>
-              <circle cx={x(i)} cy={y(p.value)} r={3} className="lc-dot">
+              <circle cx={x(i)} cy={y(p.value)} r={3.2} className="lc-dot">
                 <title>
                   {fmtDate(p.date)}: {p.value}
                   {yLabel ? " " + yLabel : ""}
@@ -229,7 +264,7 @@ export function LineChart({ points, title, subtitle, yLabel }) {
                   x={x(i)}
                   y={H - pad.bottom + 18}
                   className="lc-axis lc-axis-x"
-                  transform={`rotate(35 ${x(i)} ${H - pad.bottom + 18})`}
+                  transform={`rotate(32 ${x(i)} ${H - pad.bottom + 18})`}
                 >
                   {fmtDate(p.date).slice(0, 5)}
                 </text>
@@ -237,21 +272,21 @@ export function LineChart({ points, title, subtitle, yLabel }) {
             </g>
           ))}
         </svg>
-      </div>
+      )}
     </div>
   );
 }
 
 /* ---------- Multi-series line chart ---------- */
 const SERIES_COLORS = [
-  "#01a982",
-  "#00739d",
-  "#ff8d3f",
-  "#7630ea",
-  "#c140b8",
-  "#e8b923",
-  "#d13438",
-  "#425563",
+  "#10b981",
+  "#3b82f6",
+  "#f59e0b",
+  "#a78bfa",
+  "#ec4899",
+  "#06b6d4",
+  "#ef4444",
+  "#84cc16",
 ];
 
 export function MultiLineChart({
@@ -261,119 +296,119 @@ export function MultiLineChart({
   subtitle,
   yLabel,
 }) {
-  const W = 760;
-  const H = 300;
-  const pad = { top: 20, right: 20, bottom: 54, left: 46 };
+  const [cardRef, cardW] = useWidth(760);
+
+  const W = Math.max(320, cardW - 42);
+  const H = 280;
+  const pad = { top: 16, right: 14, bottom: 50, left: 40 };
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
 
   const hasData =
-    categories.length > 0 &&
-    series.some((s) => s.values.some((v) => v > 0));
+    categories.length > 0 && series.some((s) => s.values.some((v) => v > 0));
 
-  if (!hasData) {
-    return (
-      <div className="chart-card">
-        <div className="chart-head">
-          <h4>{title}</h4>
-          {subtitle && <span className="chart-sub">{subtitle}</span>}
-        </div>
-        <div className="chart-empty">No data in the selected range.</div>
-      </div>
-    );
-  }
-
-  const maxY = Math.max(
-    1,
-    ...series.flatMap((s) => s.values)
+  const ticks = 4;
+  const maxY = niceMax(
+    Math.max(1, ...series.flatMap((s) => s.values)),
+    ticks
   );
   const n = categories.length;
   const x = (i) => pad.left + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
   const y = (v) => pad.top + innerH - (v / maxY) * innerH;
 
-  const ticks = 4;
-  const yTicks = Array.from({ length: ticks + 1 }, (_, i) =>
-    Math.round((maxY / ticks) * i)
-  );
-
+  const yTicks = Array.from({ length: ticks + 1 }, (_, i) => (maxY / ticks) * i);
   const labelEvery = Math.max(1, Math.ceil(n / 9));
 
   return (
-    <div className="chart-card">
+    <div className="chart-card" ref={cardRef}>
       <div className="chart-head">
         <h4>{title}</h4>
         {subtitle && <span className="chart-sub">{subtitle}</span>}
       </div>
-      <div className="chart-scroll">
-        <svg width={W} height={H} className="linechart">
-          {yTicks.map((t, i) => (
-            <g key={i}>
-              <line
-                x1={pad.left}
-                x2={W - pad.right}
-                y1={y(t)}
-                y2={y(t)}
-                className="lc-grid"
-              />
-              <text x={pad.left - 8} y={y(t) + 4} className="lc-axis lc-axis-y">
-                {t}
-              </text>
-            </g>
-          ))}
-          {series.map((s, si) => {
-            const color = SERIES_COLORS[si % SERIES_COLORS.length];
-            const path = s.values
-              .map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`)
-              .join(" ");
-            return (
-              <g key={si}>
-                <path
-                  d={path}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={2.2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
+      {!hasData ? (
+        <div className="chart-empty">No data in the selected range.</div>
+      ) : (
+        <>
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            width={W}
+            height={H}
+            preserveAspectRatio="xMidYMid meet"
+            className="linechart"
+          >
+            {yTicks.map((t, i) => (
+              <g key={i}>
+                <line
+                  x1={pad.left}
+                  x2={W - pad.right}
+                  y1={y(t)}
+                  y2={y(t)}
+                  className="lc-grid"
                 />
-                {s.values.map((v, i) => (
-                  <circle key={i} cx={x(i)} cy={y(v)} r={2.6} fill={color}>
-                    <title>
-                      {s.name} · {categories[i]}: {v}
-                      {yLabel ? " " + yLabel : ""}
-                    </title>
-                  </circle>
-                ))}
+                <text
+                  x={pad.left - 8}
+                  y={y(t) + 4}
+                  className="lc-axis lc-axis-y"
+                >
+                  {fmtTick(t)}
+                </text>
               </g>
-            );
-          })}
-          {categories.map((c, i) =>
-            i % labelEvery === 0 ? (
-              <text
-                key={i}
-                x={x(i)}
-                y={H - pad.bottom + 18}
-                className="lc-axis lc-axis-x"
-                transform={`rotate(35 ${x(i)} ${H - pad.bottom + 18})`}
-              >
-                {c}
-              </text>
-            ) : null
-          )}
-        </svg>
-      </div>
-      <div className="lc-legend">
-        {series.map((s, si) => (
-          <span key={si} className="lc-legend-item">
-            <span
-              className="lc-legend-swatch"
-              style={{
-                background: SERIES_COLORS[si % SERIES_COLORS.length],
-              }}
-            />
-            {s.name}
-          </span>
-        ))}
-      </div>
+            ))}
+            {series.map((s, si) => {
+              const color = SERIES_COLORS[si % SERIES_COLORS.length];
+              const path = s.values
+                .map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`)
+                .join(" ");
+              return (
+                <g key={si}>
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={2.1}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                  {s.values.map((v, i) => (
+                    <circle key={i} cx={x(i)} cy={y(v)} r={2.6} fill={color}>
+                      <title>
+                        {s.name} · {categories[i]}: {v}
+                        {yLabel ? " " + yLabel : ""}
+                      </title>
+                    </circle>
+                  ))}
+                </g>
+              );
+            })}
+            {categories.map((c, i) =>
+              i % labelEvery === 0 ? (
+                <text
+                  key={i}
+                  x={x(i)}
+                  y={H - pad.bottom + 18}
+                  className="lc-axis lc-axis-x"
+                  transform={`rotate(32 ${x(i)} ${H - pad.bottom + 18})`}
+                >
+                  {c}
+                </text>
+              ) : null
+            )}
+          </svg>
+          <div className="lc-legend">
+            {series.map((s, si) => (
+              <span key={si} className="lc-legend-item">
+                <span
+                  className="lc-legend-swatch"
+                  style={{
+                    background: SERIES_COLORS[si % SERIES_COLORS.length],
+                  }}
+                />
+                {s.name}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

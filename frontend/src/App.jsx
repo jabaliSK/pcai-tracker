@@ -10,22 +10,58 @@ import EngagementForm from "./EngagementForm";
 import DetailModal from "./DetailModal";
 import Reports from "./Reports";
 import Settings from "./Settings";
+import Login from "./Login";
+import { useUser } from "./auth";
+import { useRoute, viewToPath } from "./router";
 import { fmtDate } from "./format";
 import hpeLogo from "./assets/HPE_logo_full-clr_rev_rgb.png";
-import playIcon from "./assets/HPE_Play_RightArrow.svg";
-import pauseIcon from "./assets/HPE_Stop_Error_Pause.svg";
-import doneIcon from "./assets/HPE_Tick_check.svg";
+import {
+  IconAlert,
+  IconChart,
+  IconCheck,
+  IconCheckCircle,
+  IconChevron,
+  IconClock,
+  IconClose,
+  IconInbox,
+  IconLayers,
+  IconMoon,
+  IconPause,
+  IconPlay,
+  IconPlus,
+  IconRefresh,
+  IconSearch,
+  IconSettings,
+  IconSun,
+  IconTimer,
+} from "./Icons";
+import { Avatar, Badge, fmtDuration } from "./ui";
 
-function statusBadge(status) {
-  if (!status) return "—";
-  const s = String(status).toLowerCase();
-  let cls = "badge-other";
-  if (s === "done") cls = "badge-done";
-  else if (s === "in progress") cls = "badge-progress";
-  else if (s === "pending") cls = "badge-pending";
-  else if (s === "paused") cls = "badge-paused";
-  return <span className={"badge " + cls}>{status}</span>;
-}
+const PAGES = {
+  recent: {
+    title: "Recent Engagements",
+    subtitle: "Testing activity from the last 30 days · latest first",
+  },
+  all: {
+    title: "All Engagements",
+    subtitle: "Complete list · latest first",
+  },
+  reports: {
+    title: "Reports & Metrics",
+    subtitle: "Testing & orientation activity overview",
+  },
+  settings: {
+    title: "Settings",
+    subtitle: "Manage the dropdown values used across engagements",
+  },
+};
+
+const NAV = [
+  { key: "recent", label: "Recent", Icon: IconClock },
+  { key: "all", label: "All", Icon: IconLayers },
+  { key: "reports", label: "Reports", Icon: IconChart },
+  { key: "settings", label: "Settings", Icon: IconSettings },
+];
 
 function isDone(status) {
   return String(status || "").toLowerCase() === "done";
@@ -33,13 +69,6 @@ function isDone(status) {
 
 function filled(v) {
   return v !== null && v !== undefined && String(v).trim() !== "";
-}
-
-function fmtDuration(hours) {
-  const totalMin = Math.max(0, Math.round((Number(hours) || 0) * 60));
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
 }
 
 function findProblems(r) {
@@ -89,12 +118,122 @@ function rowEval(r, today) {
   return { cls: "", problems };
 }
 
+/* ---------- Theme ---------- */
+function useTheme() {
+  const [theme, setTheme] = useState(
+    () => document.documentElement.getAttribute("data-theme") || "light"
+  );
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("pcai-theme", theme);
+    } catch (e) {
+      /* storage unavailable — theme just won't persist */
+    }
+  }, [theme]);
+
+  return [theme, setTheme];
+}
+
+/* ---------- Sidebar ---------- */
+function Sidebar({ view, navigate, theme, setTheme, user, onLogout }) {
+  return (
+    <aside className="sidebar">
+      <div className="side-brand">
+        <span className="brand-plaque">
+          <img
+            className="brand-logo"
+            src={hpeLogo}
+            alt="Hewlett Packard Enterprise"
+          />
+        </span>
+        <span className="brand-text">
+          <span className="brand-name">PCAI Tracker</span>
+          <span className="brand-sub">Engagements</span>
+        </span>
+      </div>
+
+      <div className="side-label">Workspace</div>
+      <nav className="side-nav">
+        {NAV.map(({ key, label, Icon }) => (
+          <a
+            key={key}
+            href={viewToPath(key)}
+            className={"side-item" + (view === key ? " active" : "")}
+            onClick={(e) => {
+              // Let the browser handle new-tab / new-window gestures.
+              if (
+                e.metaKey ||
+                e.ctrlKey ||
+                e.shiftKey ||
+                e.altKey ||
+                e.button !== 0
+              )
+                return;
+              e.preventDefault();
+              navigate(viewToPath(key));
+            }}
+            aria-current={view === key ? "page" : undefined}
+          >
+            <Icon size={17} />
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      <div className="side-foot">
+        <div className="side-label side-foot-label">Appearance</div>
+        <div className="theme-switch" role="group" aria-label="Colour theme">
+          <button
+            className={"theme-opt" + (theme === "light" ? " active" : "")}
+            onClick={() => setTheme("light")}
+            aria-pressed={theme === "light"}
+          >
+            <IconSun size={14} />
+            Light
+          </button>
+          <button
+            className={"theme-opt" + (theme === "dark" ? " active" : "")}
+            onClick={() => setTheme("dark")}
+            aria-pressed={theme === "dark"}
+          >
+            <IconMoon size={14} />
+            Dark
+          </button>
+        </div>
+
+        <div className="side-user">
+          <span className="side-user-id">
+            <Avatar name={user} />
+            <span className="side-user-name" title={user}>
+              {user}
+            </span>
+          </span>
+          <button
+            className="side-signout"
+            onClick={onLogout}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <IconClose size={15} />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 export default function App() {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [view, setView] = useState("recent"); // "recent" | "all"
+
+  const { user, login, logout } = useUser();
+  const { view, navigate } = useRoute(); // "recent" | "all" | "reports" | "settings"
+
+  const [theme, setTheme] = useTheme();
 
   const [options, setOptions] = useState({
     testing_resource: [],
@@ -116,6 +255,7 @@ export default function App() {
   const [nowTick, setNowTick] = useState(() => Date.now());
 
   async function load() {
+    if (!user) return;
     setLoading(true);
     setError("");
     try {
@@ -136,7 +276,7 @@ export default function App() {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, view]);
+  }, [search, view, user]);
 
   // Tick every second so "In Progress" testing timers advance live.
   useEffect(() => {
@@ -145,6 +285,7 @@ export default function App() {
   }, []);
 
   async function loadOptions() {
+    if (!user) return;
     try {
       const data = await getOptions();
       setOptions(data);
@@ -155,7 +296,8 @@ export default function App() {
 
   useEffect(() => {
     loadOptions();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   function openNew() {
     setEditing(null);
@@ -279,9 +421,25 @@ export default function App() {
     }
   }
 
-  function sortArrow(key) {
-    if (sortKey !== key) return "";
-    return sortDir === "asc" ? " \u25b2" : " \u25bc";
+  // Sortable header cell.
+  function Th({ colKey, children }) {
+    const active = sortKey === colKey;
+    return (
+      <th
+        className={"sortable" + (active ? " sorted" : "")}
+        onClick={() => toggleSort(colKey)}
+      >
+        <span className="th-inner">
+          {children}
+          <IconChevron
+            size={13}
+            className={
+              "icon sort-ind" + (active && sortDir === "asc" ? " asc" : "")
+            }
+          />
+        </span>
+      </th>
+    );
   }
 
   // Live testing hours: base value from backend, plus elapsed time since the
@@ -294,282 +452,306 @@ export default function App() {
     return base;
   }
 
+  const isList = view === "recent" || view === "all";
+  const page = PAGES[view];
+
+  // Gate: no username, no access. Placed after all hooks so hook order is stable.
+  if (!user) {
+    return <Login onLogin={login} theme={theme} setTheme={setTheme} />;
+  }
+
   return (
     <div className="app">
-      <div className="brandbar">
-        <img className="brand-logo" src={hpeLogo} alt="Hewlett Packard Enterprise" />
-        <h1>
-          PCAI Tracker
-        </h1>
-        <nav className="brand-nav">
-          <button
-            className={"nav-tab" + (view === "recent" ? " active" : "")}
-            onClick={() => setView("recent")}
-          >
-            Recent
-          </button>
-          <button
-            className={"nav-tab" + (view === "all" ? " active" : "")}
-            onClick={() => setView("all")}
-          >
-            All Engagements
-          </button>
-          <button
-            className={"nav-tab" + (view === "reports" ? " active" : "")}
-            onClick={() => setView("reports")}
-          >
-            Reports
-          </button>
-          <button
-            className={"nav-tab" + (view === "settings" ? " active" : "")}
-            onClick={() => setView("settings")}
-          >
-            Settings
-          </button>
-        </nav>
-      </div>
+      <Sidebar
+        view={view}
+        navigate={navigate}
+        theme={theme}
+        setTheme={setTheme}
+        user={user}
+        onLogout={logout}
+      />
 
-      {view === "reports" ? (
-        <Reports />
-      ) : view === "settings" ? (
-        <Settings onChanged={loadOptions} />
-      ) : (
-        <div className="content">
-        <div className="page-head">
-          <div>
-            <h2>
-              {view === "recent" ? "Recent Engagements" : "All Engagements"}
-            </h2>
-            <p className="subtitle">
-              {view === "recent"
-                ? "Testing activity from the last 30 days · latest first"
-                : "Complete list · latest first"}
-            </p>
+      <div className="main">
+        <header className="topbar">
+          <div className="topbar-title">
+            <h1>{page.title}</h1>
+            <p>{page.subtitle}</p>
           </div>
-          <button className="btn btn-primary" onClick={openNew}>
-            + New Engagement
-          </button>
-        </div>
 
-        <div className="stats">
-          <div className="stat-card">
-            <div className="num">{doneCount}</div>
-            <div className="lbl">Testing Done</div>
-          </div>
-          <div className="stat-card">
-            <div className="num">{fmtDuration(totalHours)}</div>
-            <div className="lbl">Total Hours (Done)</div>
-          </div>
-        </div>
-
-        <div className="toolbar">
-          <input
-            className="search"
-            placeholder="Search customer, PM, resource, tickets, comments…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <button className="btn" onClick={load}>
-            Refresh
-          </button>
-        </div>
-
-        {error && <div className="error-banner">{error}</div>}
-
-        <div className="table-card">
-          <table>
-            <colgroup>
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "18%" }} />
-              <col style={{ width: "15%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "16%" }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th
-                  className="sortable"
-                  onClick={() => toggleSort("customer")}
-                >
-                  Customer{sortArrow("customer")}
-                </th>
-                <th
-                  className="sortable"
-                  onClick={() => toggleSort("testing_date")}
-                >
-                  Testing Date{sortArrow("testing_date")}
-                </th>
-                <th
-                  className="sortable"
-                  onClick={() => toggleSort("testing_resource")}
-                >
-                  Testing Resource{sortArrow("testing_resource")}
-                </th>
-                <th
-                  className="sortable"
-                  onClick={() => toggleSort("testing_status")}
-                >
-                  Testing Status{sortArrow("testing_status")}
-                </th>
-                <th
-                  className="sortable"
-                  onClick={() => toggleSort("testing_hours")}
-                >
-                  Testing Hours{sortArrow("testing_hours")}
-                </th>
-                <th>Actions</th>
-              </tr>
-              <tr className="filter-row">
-                <th>
+          <div className="topbar-actions">
+            {isList && (
+              <>
+                <div className="search-wrap">
+                  <IconSearch size={15} />
                   <input
-                    className="col-filter"
-                    placeholder="Filter customer…"
-                    value={fltCustomer}
-                    onChange={(e) => setFltCustomer(e.target.value)}
+                    className="search"
+                    placeholder="Search customer, PM, resource, tickets…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
                   />
-                </th>
-                <th />
-                <th>
-                  <select
-                    className="col-filter"
-                    value={fltResource}
-                    onChange={(e) => setFltResource(e.target.value)}
-                  >
-                    <option value="">All resources</option>
-                    {resourceOptions.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </th>
-                <th>
-                  <select
-                    className="col-filter"
-                    value={fltStatus}
-                    onChange={(e) => setFltStatus(e.target.value)}
-                  >
-                    <option value="">All statuses</option>
-                    <option value="Pending">Pending</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Paused">Paused</option>
-                    <option value="Done">Done</option>
-                  </select>
-                </th>
-                <th />
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={6} className="muted">
-                    Loading…
-                  </td>
-                </tr>
+                </div>
+                <button
+                  className="btn btn-icon"
+                  onClick={load}
+                  title="Refresh"
+                  aria-label="Refresh"
+                >
+                  <IconRefresh size={16} />
+                </button>
+                <button className="btn btn-primary" onClick={openNew}>
+                  <IconPlus size={16} />
+                  New Engagement
+                </button>
+              </>
+            )}
+          </div>
+        </header>
+
+        {view === "reports" ? (
+          <Reports />
+        ) : view === "settings" ? (
+          <Settings onChanged={loadOptions} />
+        ) : (
+          <div className="content">
+            <div className="stats">
+              <div className="stat-card">
+                <span className="stat-icon">
+                  <IconCheckCircle size={19} />
+                </span>
+                <div className="stat-body">
+                  <div className="num">{doneCount}</div>
+                  <div className="lbl">Testing Done</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <span className="stat-icon tone-info">
+                  <IconTimer size={19} />
+                </span>
+                <div className="stat-body">
+                  <div className="num">{fmtDuration(totalHours)}</div>
+                  <div className="lbl">Total Hours (Done)</div>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="error-banner">
+                <IconAlert size={16} />
+                {error}
+              </div>
+            )}
+
+            <div className="toolbar">
+              <div className="search-wrap flt">
+                <IconSearch size={14} />
+                <input
+                  placeholder="Filter customer…"
+                  value={fltCustomer}
+                  onChange={(e) => setFltCustomer(e.target.value)}
+                />
+              </div>
+              <select
+                className="flt"
+                value={fltResource}
+                onChange={(e) => setFltResource(e.target.value)}
+              >
+                <option value="">All resources</option>
+                {resourceOptions.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="flt"
+                value={fltStatus}
+                onChange={(e) => setFltStatus(e.target.value)}
+              >
+                <option value="">All statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Paused">Paused</option>
+                <option value="Done">Done</option>
+              </select>
+              {!loading && (
+                <span className="result-count">
+                  {displayRows.length}
+                  {displayRows.length === 1 ? " engagement" : " engagements"}
+                </span>
               )}
-              {!loading && displayRows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="muted">
-                    {view === "recent"
-                      ? "No testings in the last 30 days."
-                      : "No engagements found."}
-                  </td>
-                </tr>
-              )}
-              {!loading &&
-                displayRows.map((row) => {
-                  const ev = rowEval(row, today);
-                  return (
-                    <tr
-                      key={row.uid}
-                      className={ev.cls}
-                      onClick={() => setSelected(row)}
-                    >
-                      <td
-                        className="cust-cell"
-                        title={
-                          ev.problems.length
-                            ? ev.problems.join("\n")
-                            : row.customer
-                        }
-                      >
-                        {ev.cls === "row-invalid" && (
-                          <span
-                            className="warn-mark"
-                            title={ev.problems.join("\n")}
-                          >
-                            !
-                          </span>
-                        )}
-                        {row.customer}
-                      </td>
-                      <td>{fmtDate(row.testing_date) || "—"}</td>
-                      <td title={row.testing_resource || ""}>
-                        {row.testing_resource || "—"}
-                      </td>
-                      <td>{statusBadge(row.testing_status)}</td>
-                      <td>
-                        <span
-                          className={
-                            "timer" +
-                            (row.testing_status === "In Progress"
-                              ? " timer-live"
-                              : "")
-                          }
-                          title="Total time in 'In Progress'"
-                        >
-                          {row.testing_status === "In Progress" && (
-                            <span className="timer-pulse" />
-                          )}
-                          {fmtDuration(liveHours(row))}
-                        </span>
-                      </td>
-                      <td className="actions-cell">
-                        <button
-                          className={
-                            "icon-btn" +
-                            (row.testing_status === "In Progress"
-                              ? " active"
-                              : "")
-                          }
-                          title="Set In Progress (Play)"
-                          onClick={(e) => handleStatus(row, "In Progress", e)}
-                        >
-                          <img src={playIcon} alt="Play" />
-                        </button>
-                        <button
-                          className={
-                            "icon-btn" +
-                            (row.testing_status === "Blocked"
-                              ? " active"
-                              : "")
-                          }
-                          title="Set Blocked (Pause)"
-                          onClick={(e) => handleStatus(row, "Blocked", e)}
-                        >
-                          <img src={pauseIcon} alt="Pause" />
-                        </button>
-                        <button
-                          className={
-                            "icon-btn" +
-                            (row.testing_status === "Done" ? " active" : "")
-                          }
-                          title="Set Done"
-                          onClick={(e) => handleStatus(row, "Done", e)}
-                        >
-                          <img src={doneIcon} alt="Done" />
-                        </button>
-                      </td>
+            </div>
+
+            <div className="table-card">
+              <div className="table-scroll">
+                <table>
+                  <colgroup>
+                    <col style={{ width: "26%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "19%" }} />
+                    <col style={{ width: "15%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "14%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <Th colKey="customer">Customer</Th>
+                      <Th colKey="testing_date">Testing Date</Th>
+                      <Th colKey="testing_resource">Testing Resource</Th>
+                      <Th colKey="testing_status">Testing Status</Th>
+                      <Th colKey="testing_hours">Testing Hours</Th>
+                      <th>Actions</th>
                     </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
+                  </thead>
+                  <tbody>
+                    {loading &&
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={"s" + i}>
+                          {Array.from({ length: 6 }).map((__, j) => (
+                            <td key={j}>
+                              <span
+                                className="skel"
+                                style={{
+                                  width: `${[70, 55, 65, 50, 45, 60][j]}%`,
+                                  opacity: 1 - i * 0.13,
+                                }}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+
+                    {!loading && displayRows.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="table-msg">
+                          <div className="empty">
+                            <IconInbox />
+                            <span className="empty-title">
+                              {view === "recent"
+                                ? "No testings in the last 30 days"
+                                : "No engagements found"}
+                            </span>
+                            <span className="empty-sub">
+                              Try clearing the filters or adding a new
+                              engagement.
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {!loading &&
+                      displayRows.map((row) => {
+                        const ev = rowEval(row, today);
+                        const live = row.testing_status === "In Progress";
+                        return (
+                          <tr
+                            key={row.uid}
+                            className={ev.cls}
+                            onClick={() => setSelected(row)}
+                          >
+                            <td
+                              className="cust-cell"
+                              title={
+                                ev.problems.length
+                                  ? ev.problems.join("\n")
+                                  : row.customer
+                              }
+                            >
+                              <span className="cust-inner">
+                                {ev.cls === "row-invalid" && (
+                                  <span
+                                    className="warn-mark"
+                                    title={ev.problems.join("\n")}
+                                  >
+                                    <IconAlert />
+                                  </span>
+                                )}
+                                <span className="cust-name">
+                                  {row.customer}
+                                </span>
+                              </span>
+                            </td>
+                            <td>
+                              {fmtDate(row.testing_date) || (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td title={row.testing_resource || ""}>
+                              {row.testing_resource ? (
+                                <span className="res-cell">
+                                  <Avatar name={row.testing_resource} />
+                                  <span>{row.testing_resource}</span>
+                                </span>
+                              ) : (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td>
+                              <Badge status={row.testing_status} />
+                            </td>
+                            <td>
+                              <span
+                                className={"timer" + (live ? " timer-live" : "")}
+                                title="Total time in 'In Progress'"
+                              >
+                                {live && <span className="timer-pulse" />}
+                                {fmtDuration(liveHours(row))}
+                              </span>
+                            </td>
+                            <td className="actions-cell">
+                              <span className="seg">
+                                <button
+                                  className={
+                                    "icon-btn" + (live ? " active" : "")
+                                  }
+                                  title="Set In Progress (Play)"
+                                  aria-label="Set In Progress"
+                                  onClick={(e) =>
+                                    handleStatus(row, "In Progress", e)
+                                  }
+                                >
+                                  <IconPlay />
+                                </button>
+                                <button
+                                  className={
+                                    "icon-btn tone-violet" +
+                                    (row.testing_status === "Blocked"
+                                      ? " active"
+                                      : "")
+                                  }
+                                  title="Set Blocked (Pause)"
+                                  aria-label="Set Blocked"
+                                  onClick={(e) =>
+                                    handleStatus(row, "Blocked", e)
+                                  }
+                                >
+                                  <IconPause />
+                                </button>
+                                <button
+                                  className={
+                                    "icon-btn tone-ok" +
+                                    (row.testing_status === "Done"
+                                      ? " active"
+                                      : "")
+                                  }
+                                  title="Set Done"
+                                  aria-label="Set Done"
+                                  onClick={(e) => handleStatus(row, "Done", e)}
+                                >
+                                  <IconCheck />
+                                </button>
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      )}
 
       {selected && (
         <DetailModal

@@ -3,7 +3,7 @@ from collections import defaultdict
 from typing import List, Optional
 from datetime import date, timedelta, datetime, timezone
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
@@ -151,6 +151,66 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+AUDITED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+_VERBS = {
+    "POST": "create",
+    "PUT": "update",
+    "PATCH": "update",
+    "DELETE": "delete",
+}
+
+
+def _classify_request(method: str, path: str):
+    """Derive (action, entity_type, entity_uid) from an API request path."""
+    parts = [p for p in path.split("/") if p]  # e.g. ['api', 'engagements', uid]
+    entity_type = parts[1] if len(parts) >= 2 else None
+    entity_uid = parts[2] if len(parts) >= 3 else None
+    name = entity_type or "resource"
+    if name.endswith("s"):
+        name = name[:-1]
+    action = f"{_VERBS.get(method, method.lower())}_{name}"
+    return action, entity_type, entity_uid
+
+
+@app.middleware("http")
+async def audit_log_middleware(request: Request, call_next):
+    """Record every mutating API call in the audit_logs table.
+
+    Runs for POST/PUT/PATCH/DELETE under /api/. The acting user comes from the
+    ``X-User`` header sent by the frontend. Auditing must never break the actual
+    request, so any failure here is swallowed.
+    """
+    response = await call_next(request)
+    try:
+        method = request.method.upper()
+        path = request.url.path
+        if method in AUDITED_METHODS and path.startswith("/api/"):
+            username = (request.headers.get("x-user") or "").strip() or "unknown"
+            action, entity_type, entity_uid = _classify_request(method, path)
+            db = SessionLocal()
+            try:
+                db.add(
+                    models.AuditLog(
+                        username=username[:255],
+                        action=action[:100],
+                        method=method[:10],
+                        path=path[:500],
+                        entity_type=(entity_type or None) and entity_type[:50],
+                        entity_uid=(entity_uid or None) and entity_uid[:255],
+                        status_code=response.status_code,
+                    )
+                )
+                db.commit()
+            finally:
+                db.close()
+    except Exception:
+        # Never let audit logging interfere with serving the request.
+        pass
+    return response
+
 
 
 @app.on_event("startup")
@@ -320,3 +380,25 @@ def delete_engagement(uid: str, db: Session = Depends(get_db)):
     db.delete(obj)
     db.commit()
     return None
+
+
+@app.get("/api/audit-logs", response_model=List[schemas.AuditLog])
+def list_audit_logs(
+    limit: int = 200,
+    username: Optional[str] = None,
+    entity_uid: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Return recent audit log entries, newest first."""
+    limit = max(1, min(limit, 1000))
+    query = db.query(models.AuditLog)
+    if username:
+        query = query.filter(models.AuditLog.username == username)
+    if entity_uid:
+        query = query.filter(models.AuditLog.entity_uid == entity_uid)
+    return (
+        query.order_by(models.AuditLog.created_at.desc(), models.AuditLog.id.desc())
+        .limit(limit)
+        .all()
+    )
+

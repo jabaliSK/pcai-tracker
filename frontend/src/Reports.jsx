@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { listEngagements } from "./api";
 import { CalendarHeatmap, LineChart, MultiLineChart } from "./Charts";
 import { fmtDate } from "./format";
+import { IconAlert, IconCheckCircle, IconClock } from "./Icons";
 
 function isDone(status) {
   return String(status).toLowerCase() === "done";
@@ -65,6 +66,7 @@ export default function Reports() {
 
   const [from, setFrom] = useState(toISO(addDays(today, -90)));
   const [to, setTo] = useState(toISO(today));
+  const [preset, setPreset] = useState("90d");
 
   useEffect(() => {
     let active = true;
@@ -91,9 +93,10 @@ export default function Reports() {
     return min || toISO(addDays(today, -365));
   }, [rows, today]);
 
-  function applyPreset(days) {
+  function applyPreset(days, label) {
     setTo(toISO(today));
     setFrom(days === null ? earliestISO : toISO(addDays(today, -(days - 1))));
+    setPreset(label);
   }
 
   // Fixed mandatory metrics (independent of the range picker).
@@ -224,86 +227,74 @@ export default function Reports() {
   }, [rows, from, to]);
 
   if (loading) {
-    return <div className="content muted">Loading reports…</div>;
+    return (
+      <div className="content">
+        <div className="stats">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div className="stat-card" key={i}>
+              <span className="stat-icon" />
+              <div className="stat-body" style={{ flex: 1 }}>
+                <span className="skel" style={{ width: "45%", height: 16 }} />
+                <span
+                  className="skel"
+                  style={{ width: "75%", marginTop: 7, height: 9 }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="chart-card">
+          <span className="skel" style={{ width: "30%", height: 13 }} />
+          <div className="chart-empty" style={{ marginTop: 14 }}>
+            Loading reports…
+          </div>
+        </div>
+      </div>
+    );
   }
+
   if (error) {
     return (
       <div className="content">
-        <div className="error-banner">{error}</div>
+        <div className="error-banner">
+          <IconAlert size={16} />
+          {error}
+        </div>
       </div>
     );
   }
 
   const rangeLabel = `${fmtDate(from)} → ${fmtDate(to)}`;
 
+  const TILES = [
+    { n: fixed.t7, l: "Testings Done · 7 days", tone: "", Icon: IconCheckCircle },
+    { n: fixed.t30, l: "Testings Done · 30 days", tone: "", Icon: IconCheckCircle },
+    { n: fixed.o7, l: "Orientations Done · 7 days", tone: "tone-violet", Icon: IconClock },
+    { n: fixed.o30, l: "Orientations Done · 30 days", tone: "tone-violet", Icon: IconClock },
+  ];
+
   return (
     <div className="content">
-      <div className="page-head">
-        <div>
-          <h2>Reports &amp; Metrics</h2>
-          <p className="subtitle">Testing &amp; orientation activity overview</p>
-        </div>
-      </div>
-
       {/* Fixed mandatory metrics */}
       <div className="stats">
-        <div className="stat-card">
-          <div className="num">{fixed.t7}</div>
-          <div className="lbl">Testings Done · 7 days</div>
-        </div>
-        <div className="stat-card">
-          <div className="num">{fixed.t30}</div>
-          <div className="lbl">Testings Done · 30 days</div>
-        </div>
-        <div className="stat-card">
-          <div className="num">{fixed.o7}</div>
-          <div className="lbl">Orientations Done · 7 days</div>
-        </div>
-        <div className="stat-card">
-          <div className="num">{fixed.o30}</div>
-          <div className="lbl">Orientations Done · 30 days</div>
-        </div>
-      </div>
-
-      {/* Date range picker */}
-      <div className="range-bar">
-        <span className="range-label">Date range</span>
-        <label className="range-field">
-          From
-          <input
-            type="date"
-            value={from}
-            max={to}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </label>
-        <label className="range-field">
-          To
-          <input
-            type="date"
-            value={to}
-            min={from}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </label>
-        <div className="range-presets">
-          {PRESETS.map((p) => (
-            <button
-              key={p.label}
-              className="btn btn-sm"
-              onClick={() => applyPreset(p.days)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {TILES.map((t) => (
+          <div className="stat-card" key={t.l}>
+            <span className={"stat-icon " + t.tone}>
+              <t.Icon size={19} />
+            </span>
+            <div className="stat-body">
+              <div className="num">{t.n}</div>
+              <div className="lbl">{t.l}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Mandatory heatmaps */}
-      <div className="report-section-title">Last 30 Days</div>
+      <div className="section-title">Last 30 Days</div>
       <div className="hm-row">
         <CalendarHeatmap
-          title="Testings Done — Last 30 Days"
+          title="Testings Done"
           subtitle="Completed testings per day"
           counts={fixed.test30}
           startISO={fixed.start30}
@@ -311,7 +302,7 @@ export default function Reports() {
           cellSize={18}
         />
         <CalendarHeatmap
-          title="Orientations Done — Last 30 Days"
+          title="Orientations Done"
           subtitle="Completed orientations per day"
           counts={fixed.orient30}
           startISO={fixed.start30}
@@ -320,19 +311,57 @@ export default function Reports() {
         />
       </div>
 
-      <div className="report-section-title">
-        Selected Range — {rangeLabel}
+      {/* Date range picker */}
+      <div className="section-title">Selected Range — {rangeLabel}</div>
+      <div className="range-bar">
+        <span className="range-label">Range</span>
+        <label className="range-field">
+          From
+          <input
+            type="date"
+            value={from}
+            max={to}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setPreset(null);
+            }}
+          />
+        </label>
+        <label className="range-field">
+          To
+          <input
+            type="date"
+            value={to}
+            min={from}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setPreset(null);
+            }}
+          />
+        </label>
+        <div className="range-presets">
+          {PRESETS.map((p) => (
+            <button
+              key={p.label}
+              className={"btn btn-sm" + (preset === p.label ? " active" : "")}
+              onClick={() => applyPreset(p.days, p.label)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
+
       <div className="hm-row">
         <CalendarHeatmap
-          title="Testings Done — Selected Range"
+          title="Testings Done"
           subtitle="Completed testings per day"
           counts={ranged.testDaily}
           startISO={from}
           endISO={to}
         />
         <CalendarHeatmap
-          title="Orientations Done — Selected Range"
+          title="Orientations Done"
           subtitle="Completed orientations per day"
           counts={ranged.orientDaily}
           startISO={from}
@@ -341,47 +370,51 @@ export default function Reports() {
       </div>
 
       {/* Per-resource over time */}
-      <div className="report-section-title">Per Resource — {rangeLabel}</div>
-      <MultiLineChart
-        title="Testing Count per Resource"
-        subtitle="Testings per week, by testing resource"
-        categories={ranged.categories}
-        series={ranged.testCountSeries}
-      />
-      <MultiLineChart
-        title="Orientation Count per Resource"
-        subtitle="Orientations per week, by orientation resource"
-        categories={ranged.categories}
-        series={ranged.orientCountSeries}
-      />
-      <MultiLineChart
-        title="Testing Hours per Resource"
-        subtitle="Testing hours per week, by testing resource"
-        categories={ranged.categories}
-        series={ranged.testHoursSeries}
-        yLabel="hrs"
-      />
-      <MultiLineChart
-        title="Orientation Hours per Resource"
-        subtitle="Orientation hours per week, by orientation resource"
-        categories={ranged.categories}
-        series={ranged.orientHoursSeries}
-        yLabel="hrs"
-      />
+      <div className="section-title">Per Resource — {rangeLabel}</div>
+      <div className="chart-row">
+        <MultiLineChart
+          title="Testing Count per Resource"
+          subtitle="Testings per week, by testing resource"
+          categories={ranged.categories}
+          series={ranged.testCountSeries}
+        />
+        <MultiLineChart
+          title="Orientation Count per Resource"
+          subtitle="Orientations per week, by orientation resource"
+          categories={ranged.categories}
+          series={ranged.orientCountSeries}
+        />
+        <MultiLineChart
+          title="Testing Hours per Resource"
+          subtitle="Testing hours per week, by testing resource"
+          categories={ranged.categories}
+          series={ranged.testHoursSeries}
+          yLabel="hrs"
+        />
+        <MultiLineChart
+          title="Orientation Hours per Resource"
+          subtitle="Orientation hours per week, by orientation resource"
+          categories={ranged.categories}
+          series={ranged.orientHoursSeries}
+          yLabel="hrs"
+        />
+      </div>
 
       {/* Totals over time */}
-      <div className="report-section-title">Totals — {rangeLabel}</div>
-      <LineChart
-        title="Testing Count — All Resources per Week"
-        subtitle="Total testings per week"
-        points={ranged.weeklyTestTotal}
-      />
-      <LineChart
-        title="Testing Hours Over Time"
-        subtitle="Total testing hours per testing date"
-        points={ranged.hoursPoints}
-        yLabel="hrs"
-      />
+      <div className="section-title">Totals — {rangeLabel}</div>
+      <div className="chart-row">
+        <LineChart
+          title="Testing Count — All Resources per Week"
+          subtitle="Total testings per week"
+          points={ranged.weeklyTestTotal}
+        />
+        <LineChart
+          title="Testing Hours Over Time"
+          subtitle="Total testing hours per testing date"
+          points={ranged.hoursPoints}
+          yLabel="hrs"
+        />
+      </div>
     </div>
   );
 }

@@ -66,3 +66,23 @@ class StatusEvent(Base):
     engagement_uid = Column(String(36), index=True, nullable=False)
     status = Column(String(100))
     changed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    """Immutable record of every mutating action and who performed it."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(255), index=True)
+    action = Column(String(100), index=True)
+    method = Column(String(10))
+    path = Column(String(500))
+    entity_type = Column(String(50), index=True)
+    entity_uid = Column(String(255), index=True)
+    status_code = Column(Integer)
+    detail = Column(Text)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
