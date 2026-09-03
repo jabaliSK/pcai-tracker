@@ -745,6 +745,22 @@ export default function App() {
               )}
             </div>
 
+            <div className="legend" aria-label="Row color legend">
+              <span className="legend-title">Row colors:</span>
+              <span className="legend-item">
+                <span className="legend-swatch swatch-ok" />
+                Complete — testing &amp; orientation done
+              </span>
+              <span className="legend-item">
+                <span className="legend-swatch swatch-warn" />
+                In progress — testing done, orientation pending
+              </span>
+              <span className="legend-item">
+                <span className="legend-swatch swatch-danger" />
+                Needs attention — missing info or overdue (&gt;30 days)
+              </span>
+            </div>
+
             <div className="table-card">
               <div className="table-scroll">
                 <table>

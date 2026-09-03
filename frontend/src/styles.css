@@ -1090,6 +1090,50 @@ tbody tr:last-child td {
   background: transparent;
 }
 
+/* Row color legend */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 10px 4px 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.legend-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex: none;
+}
+
+.legend-swatch.swatch-ok {
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--ok);
+}
+
+.legend-swatch.swatch-warn {
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--warn);
+}
+
+.legend-swatch.swatch-danger {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--danger);
+}
+
 /* Row state — a coloured rail on the left plus a whisper of tint */
 tbody tr.row-ok td:first-child,
 tbody tr.row-warn td:first-child,
