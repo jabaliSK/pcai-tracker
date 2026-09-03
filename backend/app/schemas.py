@@ -20,7 +20,7 @@ class EngagementBase(BaseModel):
     testing_status: Optional[str] = None
     orientation_status: Optional[str] = None
     testing_hours: Optional[float] = None
-    orientation_hours: Optional[int] = None
+    orientation_hours: Optional[float] = None
     orientation_feedback: Optional[str] = None
     comments: Optional[str] = None
     tickets: Optional[str] = None
@@ -46,8 +46,8 @@ class EngagementUpdate(BaseModel):
     screen_share_resource: Optional[str] = None
     testing_status: Optional[str] = None
     orientation_status: Optional[str] = None
-    testing_hours: Optional[int] = None
-    orientation_hours: Optional[int] = None
+    testing_hours: Optional[float] = None
+    orientation_hours: Optional[float] = None
     orientation_feedback: Optional[str] = None
     comments: Optional[str] = None
     tickets: Optional[str] = None
@@ -64,10 +64,19 @@ class OptionsUpdate(BaseModel):
     values: list[str]
 
 
+class Settings(BaseModel):
+    allow_hours_edit: bool = False
+
+
+class SettingsUpdate(BaseModel):
+    allow_hours_edit: Optional[bool] = None
+
+
 class StatusEvent(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     status: Optional[str] = None
+    kind: Optional[str] = None
     changed_at: Optional[datetime] = None
 
 

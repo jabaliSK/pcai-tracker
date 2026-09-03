@@ -35,7 +35,7 @@ class Engagement(Base):
     orientation_status = Column(String(100))
 
     testing_hours = Column(Float)
-    orientation_hours = Column(Integer)
+    orientation_hours = Column(Float)
 
     orientation_feedback = Column(Text)
 
@@ -57,6 +57,15 @@ class OptionItem(Base):
     position = Column(Integer, nullable=False, default=0)
 
 
+class AppSetting(Base):
+    """Simple key/value store for global app settings (e.g. feature toggles)."""
+
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True, index=True)
+    value = Column(String(255))
+
+
 class StatusEvent(Base):
     """History of testing-status changes per engagement (for the auto timer)."""
 
@@ -65,6 +74,7 @@ class StatusEvent(Base):
     id = Column(Integer, primary_key=True, index=True)
     engagement_uid = Column(String(36), index=True, nullable=False)
     status = Column(String(100))
+    kind = Column(String(20), nullable=False, default="testing", index=True)
     changed_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

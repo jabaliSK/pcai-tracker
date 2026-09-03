@@ -27,6 +27,11 @@ function filled(v) {
   return v !== null && v !== undefined && String(v).trim() !== "";
 }
 
+// Treat empty OR zero hours as a call-out worth flagging.
+function hoursMissing(v) {
+  return !filled(v) || Number(v) === 0;
+}
+
 function isDone(s) {
   return String(s || "").toLowerCase() === "done";
 }
@@ -38,7 +43,9 @@ function missingFields(r) {
     if (!filled(r[k])) m.add(k);
   };
   ["customer", "pm", "type", "testing_date", "testing_resource", "testing_status"].forEach(need);
-  if (isDone(r.orientation_status) && !filled(r.orientation_hours))
+  if (isDone(r.testing_status) && hoursMissing(r.testing_hours))
+    m.add("testing_hours");
+  if (isDone(r.orientation_status) && hoursMissing(r.orientation_hours))
     m.add("orientation_hours");
   if (String(r.type).toLowerCase() === "vpn") {
     ["vpn_app_ip", "vpn_user", "vpn_pass", "vpn_details"].forEach(need);
@@ -46,12 +53,11 @@ function missingFields(r) {
   const oR = filled(r.orientation_resource);
   const oD = filled(r.orientation_date);
   const oF = filled(r.orientation_feedback);
-  if (oR || oD || oF) {
+  if (oR || oD) {
     if (!oR) m.add("orientation_resource");
     if (!oD) m.add("orientation_date");
-    if (!oF) m.add("orientation_feedback");
   }
-  if (oF && !filled(r.orientation_hours)) m.add("orientation_hours");
+  if (isDone(r.orientation_status) && !oF) m.add("orientation_feedback");
   return m;
 }
 
@@ -162,7 +168,7 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
                 ) : null}
               </Item>
               <Item
-                label="Testing Hours"
+                label="Testing Duration"
                 value={
                   record.testing_hours != null
                     ? `${fmtDuration(record.testing_hours)} (auto)`
@@ -255,8 +261,12 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
                 ) : null}
               </Item>
               <Item
-                label="Orientation Hours"
-                value={record.orientation_hours}
+                label="Orientation Duration"
+                value={
+                  record.orientation_hours != null
+                    ? fmtDuration(record.orientation_hours)
+                    : record.orientation_hours
+                }
                 missing={mi("orientation_hours")}
               />
               <Item

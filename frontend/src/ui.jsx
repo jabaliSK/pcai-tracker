@@ -3,11 +3,14 @@ import React from "react";
 /* Small presentational primitives shared by the table, detail view and
    reports so the same value always renders the same way. */
 
-export function fmtDuration(hours) {
-  const totalMin = Math.max(0, Math.round((Number(hours) || 0) * 60));
+// Format a duration given in whole minutes: "Xh Ym" when an hour or more,
+// otherwise just "Ym".
+export function fmtDuration(minutes) {
+  const totalMin = Math.max(0, Math.round(Number(minutes) || 0));
+  if (totalMin < 60) return `${totalMin}m`;
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
+  return `${h}h ${m}m`;
 }
 
 export function initials(name) {

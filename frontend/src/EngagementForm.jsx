@@ -12,6 +12,10 @@ function todayISO() {
   return new Date(d - tz).toISOString().slice(0, 10);
 }
 
+function isDone(s) {
+  return String(s || "").trim().toLowerCase() === "done";
+}
+
 const EMPTY = {
   customer: "",
   pm: "",
@@ -73,7 +77,7 @@ const TABS = [
   { key: "orientation", label: "Orientation" },
 ];
 
-export default function EngagementForm({ initial, options, onCancel, onSave }) {
+export default function EngagementForm({ initial, options, allowHoursEdit, onCancel, onSave }) {
   const [form, setForm] = useState(() => toForm(initial));
   const [activeTab, setActiveTab] = useState("testing");
   const isEdit = Boolean(initial && initial.uid);
@@ -81,7 +85,9 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
   const isScreenShare = form.type === "Screen Share";
 
   const opts = options || {};
-  const resourceOptions = opts.testing_resource || [];
+  const resourceOptions = (opts.testing_resource || []).filter(
+    (r) => String(r).toLowerCase() !== "admin"
+  );
   const testingStatusOptions = opts.testing_status || DEFAULT_STATUS;
   const orientationStatusOptions = opts.orientation_status || DEFAULT_STATUS;
 
@@ -124,24 +130,13 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
     const oResource = has("orientation_resource");
     const oDate = has("orientation_date");
     const oFeedback = has("orientation_feedback");
-    const oHours = has("orientation_hours");
-    if (oResource) {
-      if (!oDate) e.orientation_date = "Orientation Date is required";
-      if (!oFeedback)
-        e.orientation_feedback = "Orientation Feedback is required";
-    }
-    if (oDate) {
-      if (!oResource)
-        e.orientation_resource = "Orientation Resource is required";
-      if (!oFeedback)
-        e.orientation_feedback = "Orientation Feedback is required";
-    }
-    if (oFeedback) {
-      if (!oHours) e.orientation_hours = "Orientation Hrs is required";
-      if (!oResource)
-        e.orientation_resource = "Orientation Resource is required";
-      if (!oDate) e.orientation_date = "Orientation Date is required";
-    }
+    // Resource and Date still go together if either is set.
+    if (oResource && !oDate) e.orientation_date = "Orientation Date is required";
+    if (oDate && !oResource)
+      e.orientation_resource = "Orientation Resource is required";
+    // Feedback is mandatory only once orientation is marked Done.
+    if (isDone(form.orientation_status) && !oFeedback)
+      e.orientation_feedback = "Orientation Feedback is required";
     return e;
   }, [form, isVpn]);
 
@@ -162,20 +157,34 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
       m.add("vpn_details");
     }
     const has = (k) => String(form[k]).trim() !== "";
-    if (has("orientation_resource") || has("orientation_date") || has("orientation_feedback")) {
+    if (has("orientation_resource") || has("orientation_date")) {
       m.add("orientation_resource");
       m.add("orientation_date");
-      m.add("orientation_feedback");
     }
-    if (has("orientation_feedback")) m.add("orientation_hours");
+    if (isDone(form.orientation_status)) m.add("orientation_feedback");
     return m;
   }, [form, isVpn]);
+
+  // When hours editing is enabled, flag hours that are still 0/empty as a
+  // call-out (same visual treatment as a missing field), without blocking save.
+  const hoursWarnings = useMemo(() => {
+    if (!allowHoursEdit) return {};
+    const w = {};
+    const zeroOrEmpty = (k) => {
+      const v = String(form[k]).trim();
+      return v === "" || Number(v) === 0;
+    };
+    if (zeroOrEmpty("testing_hours")) w.testing_hours = "Testing Hours is 0";
+    if (zeroOrEmpty("orientation_hours"))
+      w.orientation_hours = "Orientation Hours is 0";
+    return w;
+  }, [form, allowHoursEdit]);
 
   // Class for a form control: mark mandatory, and flag when empty/invalid.
   function ctlCls(key) {
     let c = "";
     if (mandatory.has(key)) c += " req-field";
-    if (errors[key]) c += " field-missing";
+    if (errors[key] || hoursWarnings[key]) c += " field-missing";
     return c.trim();
   }
 
@@ -227,11 +236,14 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
   }
 
   const tabErrors = {
-    testing: Object.keys(errors).some(
-      (k) => !ORIENTATION_FIELDS.has(k) && !CONNECTION_FIELDS.has(k)
-    ),
+    testing:
+      Object.keys(errors).some(
+        (k) => !ORIENTATION_FIELDS.has(k) && !CONNECTION_FIELDS.has(k)
+      ) || Boolean(hoursWarnings.testing_hours),
     connection: Object.keys(errors).some((k) => CONNECTION_FIELDS.has(k)),
-    orientation: Object.keys(errors).some((k) => ORIENTATION_FIELDS.has(k)),
+    orientation:
+      Object.keys(errors).some((k) => ORIENTATION_FIELDS.has(k)) ||
+      Boolean(hoursWarnings.orientation_hours),
   };
 
   return (
@@ -385,14 +397,30 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </select>
               </label>
               <label>
-                <Lbl name="testing_hours">Test Hrs (auto)</Lbl>
+                <Lbl name="testing_hours">
+                  {allowHoursEdit ? "Test Duration (min)" : "Test Duration (auto)"}
+                </Lbl>
                 <input
+                  className={ctlCls("testing_hours")}
                   type="number"
+                  min="0"
+                  step="1"
                   value={form.testing_hours}
-                  readOnly
-                  disabled
-                  title="Auto-calculated from time spent in 'In Progress' status"
+                  readOnly={!allowHoursEdit}
+                  disabled={!allowHoursEdit}
+                  title={
+                    allowHoursEdit
+                      ? "Manually entered testing duration, in minutes"
+                      : "Auto-calculated from time spent in 'In Progress' status"
+                  }
+                  onChange={(e) => set("testing_hours", e.target.value)}
                 />
+                {hoursWarnings.testing_hours && (
+                  <span className="field-warn-hint">
+                    <IconAlert size={13} />
+                    Duration is 0 — enter the minutes spent.
+                  </span>
+                )}
               </label>
 
               <div className="section-divider">Notes</div>
@@ -490,11 +518,24 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
               </label>
               <label>
                 <Lbl name="orientation_resource">Orientation Resource</Lbl>
-                <input
+                <select
                   className={ctlCls("orientation_resource")}
                   value={form.orientation_resource}
                   onChange={(e) => set("orientation_resource", e.target.value)}
-                />
+                >
+                  <option value="">— Select —</option>
+                  {resourceOptions.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                  {form.orientation_resource &&
+                    !resourceOptions.includes(form.orientation_resource) && (
+                      <option value={form.orientation_resource}>
+                        {form.orientation_resource}
+                      </option>
+                    )}
+                </select>
               </label>
               <label>
                 <Lbl name="orientation_status">Orientation Status</Lbl>
@@ -519,14 +560,27 @@ export default function EngagementForm({ initial, options, onCancel, onSave }) {
                 </select>
               </label>
               <label>
-                <Lbl name="orientation_hours">Orientation Hrs</Lbl>
+                <Lbl name="orientation_hours">Orientation Duration (min)</Lbl>
                 <input
                   className={ctlCls("orientation_hours")}
                   type="number"
                   min="0"
+                  step="1"
                   value={form.orientation_hours}
+                  disabled={!allowHoursEdit}
+                  title={
+                    allowHoursEdit
+                      ? "Manually entered orientation duration, in minutes"
+                      : "Editing duration is disabled — enable it in Settings"
+                  }
                   onChange={(e) => set("orientation_hours", e.target.value)}
                 />
+                {hoursWarnings.orientation_hours && (
+                  <span className="field-warn-hint">
+                    <IconAlert size={13} />
+                    Duration is 0 — enter the minutes spent.
+                  </span>
+                )}
               </label>
               <label className="full">
                 <Lbl name="orientation_feedback">Orientation Feedback</Lbl>

@@ -760,6 +760,19 @@ select {
   background-position: right 9px center;
 }
 
+/* The native option popup does not inherit the select's colours reliably
+   (especially when the select also has a tinted state background like
+   .field-missing), which can render as white-on-white on first open. Set an
+   explicit background and text colour so options are always legible. */
+select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+select option:disabled {
+  color: var(--text-3);
+}
+
 :root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(0.75);
 }
@@ -1147,6 +1160,24 @@ tbody tr.row-invalid:hover {
   text-overflow: ellipsis;
 }
 
+/* Status cell: testing + orientation status icons side by side (single line
+   so the row height is identical whether one, two, or the all-done icon
+   is shown). */
+.status-cell {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+}
+
+.status-icon-img {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
 /* Warning marker */
 .warn-mark {
   display: inline-flex;
@@ -1276,6 +1307,21 @@ tbody tr.row-invalid:hover {
 
 tbody tr:hover .seg {
   border-color: var(--border-2);
+}
+
+.phase-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 25px;
+  padding: 3px;
+  object-fit: contain;
+  flex: none;
+}
+
+.phase-icon-blank {
+  visibility: hidden;
 }
 
 .icon-btn {
@@ -2069,6 +2115,70 @@ svg.linechart {
   font-size: 12.5px;
   font-weight: 600;
   animation: fade 0.25s var(--ease);
+}
+
+/* ---- Settings: read-only notice, hours toggle, password gate ---- */
+.settings-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  padding: 11px 14px;
+  border-radius: var(--r-sm);
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.settings-toggle-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.settings-check input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.pw-modal {
+  max-width: 380px;
+}
+
+.pw-note {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.field-warn-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--danger);
 }
 
 /* ============================================================

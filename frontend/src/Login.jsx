@@ -1,14 +1,45 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import hpeLogo from "./assets/HPE_logo_full-clr_rev_rgb.png";
 import { IconMoon, IconSun } from "./Icons";
+import { getOptions } from "./api";
 
 /**
- * Username-only sign-in. There is no password. Access to the app is blocked
- * until a non-empty username is provided.
+ * Username-only sign-in. There is no password. Access is limited to the people
+ * configured as Resources (in Settings) plus the reserved "admin" user.
  */
 export default function Login({ onLogin, theme, setTheme }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  // Canonical list of allowed names: configured resources + "admin".
+  const [allowed, setAllowed] = useState(["admin"]);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getOptions()
+      .then((data) => {
+        if (!active) return;
+        const resources = (data && data.testing_resource) || [];
+        const names = ["admin", ...resources];
+        // De-duplicate case-insensitively, keeping canonical casing.
+        const seen = new Set();
+        const unique = [];
+        for (const n of names) {
+          const key = String(n).trim().toLowerCase();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          unique.push(String(n).trim());
+        }
+        setAllowed(unique);
+      })
+      .catch(() => {
+        /* fall back to admin-only if options can't be loaded */
+      })
+      .finally(() => active && setReady(true));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function submit(e) {
     e.preventDefault();
@@ -17,7 +48,17 @@ export default function Login({ onLogin, theme, setTheme }) {
       setError("Enter a username to continue.");
       return;
     }
-    onLogin(clean);
+    // Match case-insensitively but sign in with the canonical name.
+    const match = allowed.find(
+      (n) => n.toLowerCase() === clean.toLowerCase()
+    );
+    if (!match) {
+      setError(
+        "Unknown user. Only configured Resources and 'admin' can sign in."
+      );
+      return;
+    }
+    onLogin(match);
   }
 
   return (
@@ -77,9 +118,9 @@ export default function Login({ onLogin, theme, setTheme }) {
         <button
           className="btn btn-primary login-submit"
           type="submit"
-          disabled={!name.trim()}
+          disabled={!name.trim() || !ready}
         >
-          Continue
+          {ready ? "Continue" : "Loading…"}
         </button>
       </form>
     </div>

@@ -70,6 +70,18 @@ export function updateOptions(category, values) {
   }).then(handle);
 }
 
+export function getSettings() {
+  return fetch(`${BASE}/settings`, { headers: withUser() }).then(handle);
+}
+
+export function updateSettings(data) {
+  return fetch(`${BASE}/settings`, {
+    method: "PUT",
+    headers: withUser({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  }).then(handle);
+}
+
 export function getStatusEvents(id) {
   return fetch(`${BASE}/engagements/${id}/status-events`, {
     headers: withUser(),

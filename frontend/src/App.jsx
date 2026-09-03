@@ -5,6 +5,7 @@ import {
   updateEngagement,
   deleteEngagement,
   getOptions,
+  getSettings,
 } from "./api";
 import EngagementForm from "./EngagementForm";
 import DetailModal from "./DetailModal";
@@ -15,6 +16,19 @@ import { useUser } from "./auth";
 import { useRoute, viewToPath } from "./router";
 import { fmtDate } from "./format";
 import hpeLogo from "./assets/HPE_logo_full-clr_rev_rgb.png";
+import allDoneIcon from "./assets/all_done.svg";
+import testingPending from "./assets/testing_pending.svg";
+import testingScheduled from "./assets/testing_scheduled.svg";
+import testingInProgress from "./assets/testing_in_progress.svg";
+import testingPaused from "./assets/testing_paused.svg";
+import testingBlocked from "./assets/testing_blocked.svg";
+import testingDone from "./assets/testing_done.svg";
+import orientationPending from "./assets/orientation_pending.svg";
+import orientationScheduled from "./assets/orientation_scheduled.svg";
+import orientationInProgress from "./assets/orientation_in_progress.svg";
+import orientationPaused from "./assets/orientation_paused.svg";
+import orientationBlocked from "./assets/orientation_blocked.svg";
+import orientationDone from "./assets/orientation_done.svg";
 import {
   IconAlert,
   IconChart,
@@ -35,7 +49,7 @@ import {
   IconSun,
   IconTimer,
 } from "./Icons";
-import { Avatar, Badge, fmtDuration } from "./ui";
+import { Avatar, fmtDuration } from "./ui";
 
 const PAGES = {
   recent: {
@@ -63,12 +77,51 @@ const NAV = [
   { key: "settings", label: "Settings", Icon: IconSettings },
 ];
 
+// Per-status icons for the Status column, keyed by lowercased status value.
+const TESTING_STATUS_ICONS = {
+  pending: testingPending,
+  scheduled: testingScheduled,
+  "in progress": testingInProgress,
+  paused: testingPaused,
+  blocked: testingBlocked,
+  done: testingDone,
+};
+
+const ORIENTATION_STATUS_ICONS = {
+  pending: orientationPending,
+  scheduled: orientationScheduled,
+  "in progress": orientationInProgress,
+  paused: orientationPaused,
+  blocked: orientationBlocked,
+  done: orientationDone,
+};
+
+function statusIcon(kind, status) {
+  const map =
+    kind === "orientation" ? ORIENTATION_STATUS_ICONS : TESTING_STATUS_ICONS;
+  return map[String(status || "").trim().toLowerCase()] || null;
+}
+
 function isDone(status) {
   return String(status || "").toLowerCase() === "done";
 }
 
+// Which phase the Actions column controls for a row. While testing is not Done
+// the buttons drive testing_status; once testing is Done the same buttons drive
+// orientation_status; when both are Done there is nothing left to control.
+function activePhase(r) {
+  if (!isDone(r.testing_status)) return "testing";
+  if (!isDone(r.orientation_status)) return "orientation";
+  return "complete";
+}
+
 function filled(v) {
   return v !== null && v !== undefined && String(v).trim() !== "";
+}
+
+// Treat empty OR zero hours as a call-out worth flagging.
+function hoursMissing(v) {
+  return !filled(v) || Number(v) === 0;
 }
 
 function findProblems(r) {
@@ -79,8 +132,10 @@ function findProblems(r) {
   if (!filled(r.testing_date)) p.push("Testing Date is missing");
   if (!filled(r.testing_resource)) p.push("Testing Resource is missing");
   if (!filled(r.testing_status)) p.push("Testing Status is missing");
-  if (isDone(r.orientation_status) && !filled(r.orientation_hours))
-    p.push("Orientation is Done but Orientation Hours is empty");
+  if (isDone(r.testing_status) && hoursMissing(r.testing_hours))
+    p.push("Testing is Done but Testing Hours is 0");
+  if (isDone(r.orientation_status) && hoursMissing(r.orientation_hours))
+    p.push("Orientation is Done but Orientation Hours is 0");
   if (String(r.type) === "VPN") {
     if (!filled(r.vpn_app_ip)) p.push("VPN App / IP is missing");
     if (!filled(r.vpn_user)) p.push("VPN Username is missing");
@@ -90,13 +145,12 @@ function findProblems(r) {
   const oR = filled(r.orientation_resource);
   const oD = filled(r.orientation_date);
   const oF = filled(r.orientation_feedback);
-  const oH = filled(r.orientation_hours);
-  if (oR && (!oD || !oF))
-    p.push("Orientation Resource set but Date/Feedback missing");
-  if (oD && (!oR || !oF))
-    p.push("Orientation Date set but Resource/Feedback missing");
-  if (oF && (!oR || !oD || !oH))
-    p.push("Orientation Feedback set but Resource/Date/Hours missing");
+  if (oR && !oD)
+    p.push("Orientation Resource set but Date missing");
+  if (oD && !oR)
+    p.push("Orientation Date set but Resource missing");
+  if (isDone(r.orientation_status) && !oF)
+    p.push("Orientation is Done but Feedback is missing");
   return p;
 }
 
@@ -156,7 +210,9 @@ function Sidebar({ view, navigate, theme, setTheme, user, onLogout }) {
 
       <div className="side-label">Workspace</div>
       <nav className="side-nav">
-        {NAV.map(({ key, label, Icon }) => (
+        {NAV.filter(
+          ({ key }) => key !== "settings" || user === "admin"
+        ).map(({ key, label, Icon }) => (
           <a
             key={key}
             href={viewToPath(key)}
@@ -241,11 +297,14 @@ export default function App() {
     orientation_status: [],
   });
 
-  const [sortKey, setSortKey] = useState("testing_date");
+  const [allowHoursEdit, setAllowHoursEdit] = useState(false);
+
+  const [sortKey, setSortKey] = useState("updated_at");
   const [sortDir, setSortDir] = useState("desc");
   const [fltCustomer, setFltCustomer] = useState("");
   const [fltResource, setFltResource] = useState("");
   const [fltStatus, setFltStatus] = useState("");
+  const [fltOrientation, setFltOrientation] = useState("");
 
   const [selected, setSelected] = useState(null); // record for detail view
   const [editing, setEditing] = useState(undefined); // record | null(new) for form
@@ -294,10 +353,29 @@ export default function App() {
     }
   }
 
+  async function loadSettings() {
+    if (!user) return;
+    try {
+      const data = await getSettings();
+      setAllowHoursEdit(Boolean(data && data.allow_hours_edit));
+    } catch (e) {
+      /* keep previous settings on failure */
+    }
+  }
+
   useEffect(() => {
     loadOptions();
+    loadSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Non-admins have no Settings page: bounce them back to Recent if they try
+  // to reach it directly (e.g. via URL or a stale link).
+  useEffect(() => {
+    if (view === "settings" && user && user !== "admin") {
+      navigate(viewToPath("recent"));
+    }
+  }, [view, user, navigate]);
 
   function openNew() {
     setEditing(null);
@@ -338,9 +416,39 @@ export default function App() {
 
   async function handleStatus(row, status, e) {
     if (e) e.stopPropagation();
-    if (String(row.testing_status) === status) return;
+    const phase = activePhase(row);
+    // Once both phases are Done the buttons are inert.
+    if (phase === "complete") return;
+    const field =
+      phase === "orientation" ? "orientation_status" : "testing_status";
+    if (String(row[field]) === status) return;
+    // Starting orientation requires the date and resource to be set first.
+    if (phase === "orientation" && status === "In Progress") {
+      const missing = [];
+      if (!filled(row.orientation_date)) missing.push("Orientation Date");
+      if (!filled(row.orientation_resource))
+        missing.push("Orientation Resource");
+      if (missing.length) {
+        alert(
+          "Please fill in " +
+            missing.join(" and ") +
+            " before starting orientation.\n\nEdit the record to add " +
+            (missing.length > 1 ? "these fields." : "this field.")
+        );
+        return;
+      }
+    }
+    // Marking orientation Done requires feedback to be captured first.
+    if (phase === "orientation" && status === "Done") {
+      if (!filled(row.orientation_feedback)) {
+        alert(
+          "Please add Orientation Feedback before marking orientation as Done.\n\nEdit the record to add this field."
+        );
+        return;
+      }
+    }
     try {
-      await updateEngagement(row.uid, { testing_status: status });
+      await updateEngagement(row.uid, { [field]: status });
       await load();
     } catch (err) {
       alert("Status update failed: " + err.message);
@@ -372,7 +480,11 @@ export default function App() {
   const resourceOptions = useMemo(() => {
     const s = new Set();
     rows.forEach((r) => {
-      if (filled(r.testing_resource)) s.add(r.testing_resource);
+      if (
+        filled(r.testing_resource) &&
+        r.testing_resource.toLowerCase() !== "admin"
+      )
+        s.add(r.testing_resource);
     });
     return Array.from(s).sort();
   }, [rows]);
@@ -390,13 +502,18 @@ export default function App() {
         return false;
       if (fltStatus && String(r.testing_status || "") !== fltStatus)
         return false;
+      if (
+        fltOrientation &&
+        String(r.orientation_status || "") !== fltOrientation
+      )
+        return false;
       return true;
     });
     const dir = sortDir === "asc" ? 1 : -1;
     out = [...out].sort((a, b) => {
       let av = a[sortKey];
       let bv = b[sortKey];
-      if (sortKey === "testing_date") {
+      if (sortKey === "testing_date" || sortKey === "updated_at") {
         av = av ? String(av) : "";
         bv = bv ? String(bv) : "";
       } else if (sortKey === "testing_hours") {
@@ -411,7 +528,7 @@ export default function App() {
       return 0;
     });
     return out;
-  }, [rows, fltCustomer, fltResource, fltStatus, sortKey, sortDir]);
+  }, [rows, fltCustomer, fltResource, fltStatus, fltOrientation, sortKey, sortDir]);
 
   function toggleSort(key) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -442,12 +559,17 @@ export default function App() {
     );
   }
 
-  // Live testing hours: base value from backend, plus elapsed time since the
-  // rows were loaded for anything currently "In Progress".
+  // Live duration (in minutes) for the active phase: base value from the
+  // backend, plus elapsed time since the rows were loaded for anything
+  // currently "In Progress".
   function liveHours(row) {
-    const base = Number(row.testing_hours) || 0;
-    if (String(row.testing_status) === "In Progress") {
-      return base + (nowTick - loadedAt) / 3600000;
+    const phase = activePhase(row);
+    const isOrientation = phase === "orientation";
+    const status = isOrientation ? row.orientation_status : row.testing_status;
+    const base =
+      Number(isOrientation ? row.orientation_hours : row.testing_hours) || 0;
+    if (String(status) === "In Progress") {
+      return base + (nowTick - loadedAt) / 60000;
     }
     return base;
   }
@@ -509,8 +631,14 @@ export default function App() {
 
         {view === "reports" ? (
           <Reports />
+        ) : view === "settings" && user === "admin" ? (
+          <Settings
+            user={user}
+            onChanged={loadOptions}
+            onSettingsChanged={loadSettings}
+          />
         ) : view === "settings" ? (
-          <Settings onChanged={loadOptions} />
+          <div className="content" />
         ) : (
           <div className="content">
             <div className="stats">
@@ -529,7 +657,7 @@ export default function App() {
                 </span>
                 <div className="stat-body">
                   <div className="num">{fmtDuration(totalHours)}</div>
-                  <div className="lbl">Total Hours (Done)</div>
+                  <div className="lbl">Total Duration (Done)</div>
                 </div>
               </div>
             </div>
@@ -567,11 +695,24 @@ export default function App() {
                 value={fltStatus}
                 onChange={(e) => setFltStatus(e.target.value)}
               >
-                <option value="">All statuses</option>
-                <option value="Pending">Pending</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Paused">Paused</option>
-                <option value="Done">Done</option>
+                <option value="">All testing statuses</option>
+                {(options.testing_status || []).map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="flt"
+                value={fltOrientation}
+                onChange={(e) => setFltOrientation(e.target.value)}
+              >
+                <option value="">All orientation statuses</option>
+                {(options.orientation_status || []).map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
               </select>
               {!loading && (
                 <span className="result-count">
@@ -597,8 +738,8 @@ export default function App() {
                       <Th colKey="customer">Customer</Th>
                       <Th colKey="testing_date">Testing Date</Th>
                       <Th colKey="testing_resource">Testing Resource</Th>
-                      <Th colKey="testing_status">Testing Status</Th>
-                      <Th colKey="testing_hours">Testing Hours</Th>
+                      <Th colKey="testing_status">Status</Th>
+                      <Th colKey="testing_hours">Duration</Th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -642,7 +783,12 @@ export default function App() {
                     {!loading &&
                       displayRows.map((row) => {
                         const ev = rowEval(row, today);
-                        const live = row.testing_status === "In Progress";
+                        const phase = activePhase(row);
+                        const activeStatus =
+                          phase === "orientation"
+                            ? row.orientation_status
+                            : row.testing_status;
+                        const live = activeStatus === "In Progress";
                         return (
                           <tr
                             key={row.uid}
@@ -687,60 +833,132 @@ export default function App() {
                               )}
                             </td>
                             <td>
-                              <Badge status={row.testing_status} />
+                              {isDone(row.testing_status) &&
+                              isDone(row.orientation_status) ? (
+                                <span
+                                  className="status-cell"
+                                  title="Testing & Orientation complete"
+                                >
+                                  <img
+                                    className="status-icon-img"
+                                    src={allDoneIcon}
+                                    alt="All done"
+                                  />
+                                </span>
+                              ) : (
+                                <span className="status-cell">
+                                  {statusIcon("testing", row.testing_status) && (
+                                    <img
+                                      className="status-icon-img"
+                                      src={statusIcon(
+                                        "testing",
+                                        row.testing_status
+                                      )}
+                                      alt={"Testing: " + row.testing_status}
+                                      title={"Testing: " + row.testing_status}
+                                    />
+                                  )}
+                                  {filled(row.orientation_status) &&
+                                    statusIcon(
+                                      "orientation",
+                                      row.orientation_status
+                                    ) && (
+                                      <img
+                                        className="status-icon-img"
+                                        src={statusIcon(
+                                          "orientation",
+                                          row.orientation_status
+                                        )}
+                                        alt={
+                                          "Orientation: " +
+                                          row.orientation_status
+                                        }
+                                        title={
+                                          "Orientation: " +
+                                          row.orientation_status
+                                        }
+                                      />
+                                    )}
+                                </span>
+                              )}
                             </td>
                             <td>
                               <span
                                 className={"timer" + (live ? " timer-live" : "")}
-                                title="Total time in 'In Progress'"
+                                title={
+                                  phase === "orientation"
+                                    ? "Total orientation time in 'In Progress'"
+                                    : "Total testing time in 'In Progress'"
+                                }
                               >
                                 {live && <span className="timer-pulse" />}
                                 {fmtDuration(liveHours(row))}
                               </span>
                             </td>
                             <td className="actions-cell">
-                              <span className="seg">
-                                <button
-                                  className={
-                                    "icon-btn" + (live ? " active" : "")
-                                  }
-                                  title="Set In Progress (Play)"
-                                  aria-label="Set In Progress"
-                                  onClick={(e) =>
-                                    handleStatus(row, "In Progress", e)
-                                  }
-                                >
-                                  <IconPlay />
-                                </button>
-                                <button
-                                  className={
-                                    "icon-btn tone-violet" +
-                                    (row.testing_status === "Blocked"
-                                      ? " active"
-                                      : "")
-                                  }
-                                  title="Set Blocked (Pause)"
-                                  aria-label="Set Blocked"
-                                  onClick={(e) =>
-                                    handleStatus(row, "Blocked", e)
-                                  }
-                                >
-                                  <IconPause />
-                                </button>
-                                <button
-                                  className={
-                                    "icon-btn tone-ok" +
-                                    (row.testing_status === "Done"
-                                      ? " active"
-                                      : "")
-                                  }
-                                  title="Set Done"
-                                  aria-label="Set Done"
-                                  onClick={(e) => handleStatus(row, "Done", e)}
-                                >
-                                  <IconCheck />
-                                </button>
-                              </span>
+                              {phase === "complete" ? (
+                                <span className="cell-empty">—</span>
+                              ) : (
+                                <span className="seg">
+                                  <img
+                                    className="phase-icon"
+                                    src={
+                                      statusIcon(phase, activeStatus) ||
+                                      (phase === "orientation"
+                                        ? orientationPending
+                                        : testingPending)
+                                    }
+                                    alt={
+                                      phase === "orientation"
+                                        ? "Orientation phase"
+                                        : "Testing phase"
+                                    }
+                                    title={
+                                      phase === "orientation"
+                                        ? "Orientation phase"
+                                        : "Testing phase"
+                                    }
+                                  />
+                                  <button
+                                    className={
+                                      "icon-btn" + (live ? " active" : "")
+                                    }
+                                    title="Set In Progress (Play)"
+                                    aria-label="Set In Progress"
+                                    onClick={(e) =>
+                                      handleStatus(row, "In Progress", e)
+                                    }
+                                  >
+                                    <IconPlay />
+                                  </button>
+                                  <button
+                                    className={
+                                      "icon-btn tone-violet" +
+                                      (activeStatus === "Blocked"
+                                        ? " active"
+                                        : "")
+                                    }
+                                    title="Set Blocked (Pause)"
+                                    aria-label="Set Blocked"
+                                    onClick={(e) =>
+                                      handleStatus(row, "Blocked", e)
+                                    }
+                                  >
+                                    <IconPause />
+                                  </button>
+                                  <button
+                                    className={
+                                      "icon-btn tone-ok" +
+                                      (activeStatus === "Done" ? " active" : "")
+                                    }
+                                    title="Set Done"
+                                    aria-label="Set Done"
+                                    onClick={(e) => handleStatus(row, "Done", e)}
+                                  >
+                                    <IconCheck />
+                                  </button>
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -766,6 +984,7 @@ export default function App() {
         <EngagementForm
           initial={editing}
           options={options}
+          allowHoursEdit={allowHoursEdit}
           onCancel={() => {
             setShowForm(false);
             setEditing(undefined);

@@ -19,6 +19,10 @@ DEFAULT_OPTIONS = {
     "orientation_status": ["Pending", "In Progress", "Paused", "Blocked", "Done"],
 }
 
+DEFAULT_SETTINGS = {
+    "allow_hours_edit": "false",
+}
+
 IN_PROGRESS = "in progress"
 
 
@@ -39,19 +43,37 @@ def _seed_options(db: Session):
     db.commit()
 
 
-def _add_status_event(db: Session, uid: str, status: Optional[str]):
+def _seed_settings(db: Session):
+    """Ensure a row exists for every known global setting."""
+    for key, value in DEFAULT_SETTINGS.items():
+        exists = db.get(models.AppSetting, key)
+        if not exists:
+            db.add(models.AppSetting(key=key, value=value))
+    db.commit()
+
+
+def _get_bool_setting(db: Session, key: str, default: bool = False) -> bool:
+    """Read a boolean setting from the key/value store."""
+    row = db.get(models.AppSetting, key)
+    if row is None or row.value is None:
+        return default
+    return str(row.value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _add_status_event(db: Session, uid: str, status: Optional[str], kind: str = "testing"):
     db.add(
         models.StatusEvent(
             engagement_uid=uid,
             status=status,
+            kind=kind,
             changed_at=datetime.now(timezone.utc),
         )
     )
 
 
-def _compute_hours(events, now):
-    """Total hours an engagement has spent in the 'In Progress' status."""
-    acc = 0.0
+def _compute_minutes(events, now):
+    """Total whole minutes an engagement has spent in the 'In Progress' status."""
+    acc = 0.0  # accumulated seconds
     start = None
     for e in sorted(events, key=lambda x: x.changed_at):
         if start is not None:
@@ -61,19 +83,26 @@ def _compute_hours(events, now):
             start = e.changed_at
     if start is not None:
         acc += (now - start).total_seconds()
-    return round(acc / 3600.0, 2)
+    return int(round(acc / 60.0))
 
 
 def _attach_hours(db: Session, objs):
-    """Set testing_hours (in memory) from status history for each engagement.
+    """Set testing_hours and orientation_hours (in memory) from status history.
 
-    Engagements without any recorded status events keep their stored value so
-    legacy manually-entered hours are preserved.
+    Durations are stored in whole minutes and derived from StatusEvent history,
+    split by ``kind``. Engagements without any recorded events of a given kind
+    keep their stored value so legacy manually-entered durations are preserved.
+
+    When the global ``allow_hours_edit`` setting is on, a non-zero stored value
+    is treated as a manual override and left untouched; records with no manual
+    value (0 or null) still fall back to the auto timer so they never show 0.
     """
+    manual_mode = _get_bool_setting(db, "allow_hours_edit", False)
     single = not isinstance(objs, list)
     items = [objs] if single else objs
     uids = [o.uid for o in items if o.uid]
-    by_uid = defaultdict(list)
+    testing_by_uid = defaultdict(list)
+    orientation_by_uid = defaultdict(list)
     if uids:
         events = (
             db.query(models.StatusEvent)
@@ -81,12 +110,18 @@ def _attach_hours(db: Session, objs):
             .all()
         )
         for e in events:
-            by_uid[e.engagement_uid].append(e)
+            if (e.kind or "testing") == "orientation":
+                orientation_by_uid[e.engagement_uid].append(e)
+            else:
+                testing_by_uid[e.engagement_uid].append(e)
     now = datetime.now(timezone.utc)
     for o in items:
-        evs = by_uid.get(o.uid)
-        if evs:
-            o.testing_hours = _compute_hours(evs, now)
+        t_evs = testing_by_uid.get(o.uid)
+        if t_evs and not (manual_mode and o.testing_hours):
+            o.testing_hours = _compute_minutes(t_evs, now)
+        o_evs = orientation_by_uid.get(o.uid)
+        if o_evs and not (manual_mode and o.orientation_hours):
+            o.orientation_hours = _compute_minutes(o_evs, now)
     return objs
 
 
@@ -99,6 +134,8 @@ def _run_migrations():
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS testing_method VARCHAR(50)",
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS uid VARCHAR(36)",
         "ALTER TABLE engagements ALTER COLUMN testing_hours TYPE double precision USING testing_hours::double precision",
+        "ALTER TABLE engagements ALTER COLUMN orientation_hours TYPE double precision USING orientation_hours::double precision",
+        "ALTER TABLE status_events ADD COLUMN IF NOT EXISTS kind VARCHAR(20) DEFAULT 'testing'",
     ]
     with engine.begin() as conn:
         for stmt in statements:
@@ -223,6 +260,7 @@ def on_startup():
     try:
         seed_if_empty(db)
         _seed_options(db)
+        _seed_settings(db)
     finally:
         db.close()
 
@@ -272,6 +310,33 @@ def update_options(
     return {category: cleaned}
 
 
+@app.get("/api/settings", response_model=schemas.Settings)
+def get_settings(db: Session = Depends(get_db)):
+    """Return global app settings."""
+    return schemas.Settings(
+        allow_hours_edit=_get_bool_setting(db, "allow_hours_edit", False)
+    )
+
+
+@app.put("/api/settings", response_model=schemas.Settings)
+def update_settings(
+    payload: schemas.SettingsUpdate,
+    db: Session = Depends(get_db),
+):
+    """Update global app settings. Only provided fields are changed."""
+    if payload.allow_hours_edit is not None:
+        row = db.get(models.AppSetting, "allow_hours_edit")
+        value = "true" if payload.allow_hours_edit else "false"
+        if row is None:
+            db.add(models.AppSetting(key="allow_hours_edit", value=value))
+        else:
+            row.value = value
+        db.commit()
+    return schemas.Settings(
+        allow_hours_edit=_get_bool_setting(db, "allow_hours_edit", False)
+    )
+
+
 @app.get("/api/engagements", response_model=List[schemas.Engagement])
 def list_engagements(
     search: Optional[str] = None,
@@ -295,7 +360,7 @@ def list_engagements(
         cutoff = date.today() - timedelta(days=recent_days)
         query = query.filter(models.Engagement.testing_date >= cutoff)
     results = query.order_by(
-        models.Engagement.testing_date.desc().nullslast(),
+        models.Engagement.updated_at.desc().nullslast(),
         models.Engagement.created_at.desc(),
     ).all()
     _attach_hours(db, results)
@@ -334,13 +399,21 @@ def create_engagement(payload: schemas.EngagementCreate, db: Session = Depends(g
         data["testing_date"] = date.today()
     if not data.get("testing_status"):
         data["testing_status"] = "Pending"
-    data["testing_hours"] = 0
+    if _get_bool_setting(db, "allow_hours_edit", False):
+        # Manual hours mode: honour the values entered on the form.
+        data["testing_hours"] = data.get("testing_hours") or 0
+        data["orientation_hours"] = data.get("orientation_hours") or 0
+    else:
+        data["testing_hours"] = 0
+        data["orientation_hours"] = 0
     data["uid"] = str(uuid.uuid4())
     obj = models.Engagement(**data)
     db.add(obj)
     db.commit()
     db.refresh(obj)
-    _add_status_event(db, obj.uid, obj.testing_status)
+    _add_status_event(db, obj.uid, obj.testing_status, kind="testing")
+    if obj.orientation_status:
+        _add_status_event(db, obj.uid, obj.orientation_status, kind="orientation")
     db.commit()
     _attach_hours(db, obj)
     return obj
@@ -356,17 +429,39 @@ def update_engagement(
     if not obj:
         raise HTTPException(status_code=404, detail="Engagement not found")
     updates = payload.model_dump(exclude_unset=True)
-    # testing_hours is auto-calculated from status history; never trust client.
-    updates.pop("testing_hours", None)
-    old_status = obj.testing_status
-    new_status = updates.get("testing_status", old_status)
+    # Hours are auto-calculated from status history unless manual editing is
+    # enabled globally; otherwise never trust the client's hour values.
+    if not _get_bool_setting(db, "allow_hours_edit", False):
+        updates.pop("testing_hours", None)
+        updates.pop("orientation_hours", None)
+    old_testing = obj.testing_status
+    new_testing = updates.get("testing_status", old_testing)
+    old_orientation = obj.orientation_status
+
+    # When testing is marked Done, orientation begins: default it to Pending so
+    # the orientation phase (and its timer) can start.
+    testing_becoming_done = (
+        "testing_status" in updates
+        and (new_testing or "").strip().lower() == "done"
+        and old_testing != new_testing
+    )
+    if testing_becoming_done and not (obj.orientation_status or "").strip():
+        updates["orientation_status"] = "Pending"
+
+    new_orientation = updates.get("orientation_status", old_orientation)
     for key, value in updates.items():
         setattr(obj, key, value)
-    status_changed = "testing_status" in updates and new_status != old_status
+    testing_changed = "testing_status" in updates and new_testing != old_testing
+    orientation_changed = (
+        "orientation_status" in updates and new_orientation != old_orientation
+    )
     db.commit()
     db.refresh(obj)
-    if status_changed:
-        _add_status_event(db, obj.uid, new_status)
+    if testing_changed:
+        _add_status_event(db, obj.uid, new_testing, kind="testing")
+    if orientation_changed:
+        _add_status_event(db, obj.uid, new_orientation, kind="orientation")
+    if testing_changed or orientation_changed:
         db.commit()
     _attach_hours(db, obj)
     return obj

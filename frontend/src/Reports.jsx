@@ -385,18 +385,18 @@ export default function Reports() {
           series={ranged.orientCountSeries}
         />
         <MultiLineChart
-          title="Testing Hours per Resource"
-          subtitle="Testing hours per week, by testing resource"
+          title="Testing Duration per Resource"
+          subtitle="Testing minutes per week, by testing resource"
           categories={ranged.categories}
           series={ranged.testHoursSeries}
-          yLabel="hrs"
+          yLabel="min"
         />
         <MultiLineChart
-          title="Orientation Hours per Resource"
-          subtitle="Orientation hours per week, by orientation resource"
+          title="Orientation Duration per Resource"
+          subtitle="Orientation minutes per week, by orientation resource"
           categories={ranged.categories}
           series={ranged.orientHoursSeries}
-          yLabel="hrs"
+          yLabel="min"
         />
       </div>
 
@@ -409,10 +409,10 @@ export default function Reports() {
           points={ranged.weeklyTestTotal}
         />
         <LineChart
-          title="Testing Hours Over Time"
-          subtitle="Total testing hours per testing date"
+          title="Testing Duration Over Time"
+          subtitle="Total testing minutes per testing date"
           points={ranged.hoursPoints}
-          yLabel="hrs"
+          yLabel="min"
         />
       </div>
     </div>
