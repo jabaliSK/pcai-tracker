@@ -574,6 +574,29 @@ export default function App() {
     return base;
   }
 
+  // Combined testing + orientation duration (in minutes). The active phase
+  // uses its live value so a running timer keeps ticking.
+  function totalDuration(row) {
+    const phase = activePhase(row);
+    const testing =
+      phase === "testing"
+        ? liveHours(row)
+        : Number(row.testing_hours) || 0;
+    const orientation =
+      phase === "orientation"
+        ? liveHours(row)
+        : Number(row.orientation_hours) || 0;
+    return testing + orientation;
+  }
+
+  // Format a minutes value as hh:mm (e.g. 75 -> "01:15").
+  function fmtHM(minutes) {
+    const total = Math.max(0, Math.round(Number(minutes) || 0));
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
   const isList = view === "recent" || view === "all";
   const page = PAGES[view];
 
@@ -885,14 +908,10 @@ export default function App() {
                             <td>
                               <span
                                 className={"timer" + (live ? " timer-live" : "")}
-                                title={
-                                  phase === "orientation"
-                                    ? "Total orientation time in 'In Progress'"
-                                    : "Total testing time in 'In Progress'"
-                                }
+                                title="Total testing + orientation duration (hh:mm)"
                               >
                                 {live && <span className="timer-pulse" />}
-                                {fmtDuration(liveHours(row))}
+                                {fmtHM(totalDuration(row))}
                               </span>
                             </td>
                             <td className="actions-cell">
