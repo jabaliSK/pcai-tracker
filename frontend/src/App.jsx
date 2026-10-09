@@ -531,6 +531,18 @@ export default function App() {
     return out;
   }, [rows, fltCustomer, fltResource, fltStatus, fltOrientation, sortKey, sortDir]);
 
+  // Accelerators view: only rows that actually have accelerator info.
+  const acceleratorRows = useMemo(
+    () =>
+      displayRows.filter(
+        (r) =>
+          filled(r.accelerator_1) ||
+          filled(r.accelerator_2) ||
+          filled(r.accelerator_resource)
+      ),
+    [displayRows]
+  );
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -1129,7 +1141,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {!loading && displayRows.length === 0 && (
+                      {!loading && acceleratorRows.length === 0 && (
                         <tr>
                           <td colSpan={7} className="table-msg">
                             <div className="empty">
@@ -1142,7 +1154,7 @@ export default function App() {
                         </tr>
                       )}
                       {!loading &&
-                        displayRows.map((row) => (
+                        acceleratorRows.map((row) => (
                           <tr
                             key={row.uid}
                             onClick={() => setSelected(row)}
