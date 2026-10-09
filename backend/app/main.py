@@ -1,11 +1,10 @@
 import uuid
-from collections import defaultdict
 from typing import List, Optional
 from datetime import date, timedelta, datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -17,6 +16,34 @@ DEFAULT_OPTIONS = {
     "testing_resource": ["Jabali", "DJ", "Pransshu", "Suraj", "Sanjana"],
     "testing_status": ["Pending", "In Progress", "Paused", "Blocked", "Done"],
     "orientation_status": ["Pending", "In Progress", "Paused", "Blocked", "Done"],
+    "accelerator": [
+        "Enterprise Virtual Assistant",
+        "Knowledge Base Q&A",
+        "Document Summarizer",
+        "Video Summarization Assistant",
+        "Visual Search Assistant",
+        "Service Desk Agent",
+        "Knowledge Agent",
+    ],
+    "unit_size": [
+        "Dev Kit",
+        "Small",
+        "Small Ext",
+        "Medium",
+        "Medium Ext",
+        "Large",
+        "Large Ext",
+    ],
+    "accelerator_status": ["Pending", "In Progress", "Paused", "Blocked", "Done"],
+    "accelerator_resource": [
+        "Jabali",
+        "DJ",
+        "Pransshu",
+        "Suraj",
+        "Sanjana",
+        "Aparna",
+        "Swapnil",
+    ],
 }
 
 DEFAULT_SETTINGS = {
@@ -71,57 +98,66 @@ def _add_status_event(db: Session, uid: str, status: Optional[str], kind: str = 
     )
 
 
-def _compute_minutes(events, now):
-    """Total whole minutes an engagement has spent in the 'In Progress' status."""
-    acc = 0.0  # accumulated seconds
-    start = None
-    for e in sorted(events, key=lambda x: x.changed_at):
-        if start is not None:
-            acc += (e.changed_at - start).total_seconds()
-            start = None
-        if (e.status or "").strip().lower() == IN_PROGRESS:
-            start = e.changed_at
-    if start is not None:
-        acc += (now - start).total_seconds()
-    return int(round(acc / 60.0))
+def _latest_event_times(db: Session, uids, kind: str):
+    """Map of uid -> timestamp of the most recent status event for ``kind``."""
+    if not uids:
+        return {}
+    rows = (
+        db.query(
+            models.StatusEvent.engagement_uid,
+            func.max(models.StatusEvent.changed_at),
+        )
+        .filter(
+            models.StatusEvent.engagement_uid.in_(uids),
+            models.StatusEvent.kind == kind,
+        )
+        .group_by(models.StatusEvent.engagement_uid)
+        .all()
+    )
+    return {uid: ts for uid, ts in rows}
 
 
-def _attach_hours(db: Session, objs):
-    """Set testing_hours and orientation_hours (in memory) from status history.
+def _open_span_minutes(start, now):
+    """Whole minutes elapsed since an 'In Progress' span started."""
+    if start is None:
+        return 0
+    return int(round(max(0.0, (now - start).total_seconds()) / 60.0))
 
-    Durations are stored in whole minutes and derived from StatusEvent history,
-    split by ``kind``. Engagements without any recorded events of a given kind
-    keep their stored value so legacy manually-entered durations are preserved.
 
-    When the global ``allow_hours_edit`` setting is on, a non-zero stored value
-    is treated as a manual override and left untouched; records with no manual
-    value (0 or null) still fall back to the auto timer so they never show 0.
+def _attach_live_hours(db: Session, objs):
+    """Add the currently-running 'In Progress' span to the stored duration for
+    display only.
+
+    The stored ``testing_hours``/``orientation_hours`` columns are the single
+    source of truth (they hold accrued closed spans and any manual entries).
+    This helper never recomputes historical spans and never persists anything —
+    it only augments the in-memory value being serialised so a live timer keeps
+    advancing while a phase is actively "In Progress".
     """
-    manual_mode = _get_bool_setting(db, "allow_hours_edit", False)
     single = not isinstance(objs, list)
     items = [objs] if single else objs
-    uids = [o.uid for o in items if o.uid]
-    testing_by_uid = defaultdict(list)
-    orientation_by_uid = defaultdict(list)
-    if uids:
-        events = (
-            db.query(models.StatusEvent)
-            .filter(models.StatusEvent.engagement_uid.in_(uids))
-            .all()
-        )
-        for e in events:
-            if (e.kind or "testing") == "orientation":
-                orientation_by_uid[e.engagement_uid].append(e)
-            else:
-                testing_by_uid[e.engagement_uid].append(e)
     now = datetime.now(timezone.utc)
+    t_uids = [
+        o.uid
+        for o in items
+        if (o.testing_status or "").strip().lower() == IN_PROGRESS
+    ]
+    o_uids = [
+        o.uid
+        for o in items
+        if (o.orientation_status or "").strip().lower() == IN_PROGRESS
+    ]
+    t_starts = _latest_event_times(db, t_uids, "testing")
+    o_starts = _latest_event_times(db, o_uids, "orientation")
     for o in items:
-        t_evs = testing_by_uid.get(o.uid)
-        if t_evs and not (manual_mode and o.testing_hours):
-            o.testing_hours = _compute_minutes(t_evs, now)
-        o_evs = orientation_by_uid.get(o.uid)
-        if o_evs and not (manual_mode and o.orientation_hours):
-            o.orientation_hours = _compute_minutes(o_evs, now)
+        if o.uid in t_starts:
+            o.testing_hours = (o.testing_hours or 0) + _open_span_minutes(
+                t_starts[o.uid], now
+            )
+        if o.uid in o_starts:
+            o.orientation_hours = (o.orientation_hours or 0) + _open_span_minutes(
+                o_starts[o.uid], now
+            )
     return objs
 
 
@@ -133,6 +169,14 @@ def _run_migrations():
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS orientation_feedback TEXT",
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS testing_method VARCHAR(50)",
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS uid VARCHAR(36)",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS unit_size VARCHAR(50)",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_1 VARCHAR(255)",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_2 VARCHAR(255)",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_start_date DATE",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_end_date DATE",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_status VARCHAR(100)",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_resource VARCHAR(255)",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_comments TEXT",
         "ALTER TABLE engagements ALTER COLUMN testing_hours TYPE double precision USING testing_hours::double precision",
         "ALTER TABLE engagements ALTER COLUMN orientation_hours TYPE double precision USING orientation_hours::double precision",
         "ALTER TABLE status_events ADD COLUMN IF NOT EXISTS kind VARCHAR(20) DEFAULT 'testing'",
@@ -363,7 +407,7 @@ def list_engagements(
         models.Engagement.updated_at.desc().nullslast(),
         models.Engagement.created_at.desc(),
     ).all()
-    _attach_hours(db, results)
+    _attach_live_hours(db, results)
     return results
 
 
@@ -372,7 +416,7 @@ def get_engagement(uid: str, db: Session = Depends(get_db)):
     obj = db.get(models.Engagement, uid)
     if not obj:
         raise HTTPException(status_code=404, detail="Engagement not found")
-    _attach_hours(db, obj)
+    _attach_live_hours(db, obj)
     return obj
 
 
@@ -415,7 +459,7 @@ def create_engagement(payload: schemas.EngagementCreate, db: Session = Depends(g
     if obj.orientation_status:
         _add_status_event(db, obj.uid, obj.orientation_status, kind="orientation")
     db.commit()
-    _attach_hours(db, obj)
+    _attach_live_hours(db, obj)
     return obj
 
 
@@ -457,13 +501,29 @@ def update_engagement(
     )
     db.commit()
     db.refresh(obj)
+
+    # Automated tracking: when a phase leaves "In Progress", the running span
+    # has just closed. Accrue its elapsed minutes into the stored column (the
+    # source of truth). This is the only place the auto timer writes hours, so a
+    # later manual edit or a later closed span simply wins as the last entry —
+    # there is no read-time recomputation to fight the database.
+    now = datetime.now(timezone.utc)
+    if testing_changed and (old_testing or "").strip().lower() == IN_PROGRESS:
+        start = _latest_event_times(db, [obj.uid], "testing").get(obj.uid)
+        obj.testing_hours = (obj.testing_hours or 0) + _open_span_minutes(start, now)
+    if orientation_changed and (old_orientation or "").strip().lower() == IN_PROGRESS:
+        start = _latest_event_times(db, [obj.uid], "orientation").get(obj.uid)
+        obj.orientation_hours = (obj.orientation_hours or 0) + _open_span_minutes(
+            start, now
+        )
+
     if testing_changed:
         _add_status_event(db, obj.uid, new_testing, kind="testing")
     if orientation_changed:
         _add_status_event(db, obj.uid, new_orientation, kind="orientation")
-    if testing_changed or orientation_changed:
-        db.commit()
-    _attach_hours(db, obj)
+    db.commit()
+    db.refresh(obj)
+    _attach_live_hours(db, obj)
     return obj
 
 

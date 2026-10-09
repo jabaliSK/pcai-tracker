@@ -21,11 +21,19 @@ const EMPTY = {
   pm: "",
   type: "",
   testing_method: "",
+  unit_size: "",
   testing_date: "",
   orientation_date: "",
   testing_resource: "",
   orientation_resource: "",
   screen_share_resource: "",
+  accelerator_1: "",
+  accelerator_2: "",
+  accelerator_start_date: "",
+  accelerator_end_date: "",
+  accelerator_status: "",
+  accelerator_resource: "",
+  accelerator_comments: "",
   vpn_app_ip: "",
   vpn_user: "",
   vpn_pass: "",
@@ -71,10 +79,21 @@ const CONNECTION_FIELDS = new Set([
   "vpn_details",
 ]);
 
+const ACCELERATOR_FIELDS = new Set([
+  "accelerator_1",
+  "accelerator_2",
+  "accelerator_start_date",
+  "accelerator_end_date",
+  "accelerator_status",
+  "accelerator_resource",
+  "accelerator_comments",
+]);
+
 const TABS = [
   { key: "testing", label: "Testing" },
   { key: "connection", label: "Connection" },
   { key: "orientation", label: "Orientation" },
+  { key: "accelerators", label: "Accelerators" },
 ];
 
 export default function EngagementForm({ initial, options, allowHoursEdit, onCancel, onSave }) {
@@ -90,6 +109,12 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
   );
   const testingStatusOptions = opts.testing_status || DEFAULT_STATUS;
   const orientationStatusOptions = opts.orientation_status || DEFAULT_STATUS;
+  const acceleratorOptions = opts.accelerator || [];
+  const unitSizeOptions = opts.unit_size || [];
+  const acceleratorStatusOptions = opts.accelerator_status || DEFAULT_STATUS;
+  const acceleratorResourceOptions = (opts.accelerator_resource || []).filter(
+    (r) => String(r).toLowerCase() !== "admin"
+  );
 
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -137,6 +162,17 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
     // Feedback is mandatory only once orientation is marked Done.
     if (isDone(form.orientation_status) && !oFeedback)
       e.orientation_feedback = "Orientation Feedback is required";
+    // Accelerators must be distinct when both are selected.
+    if (
+      String(form.accelerator_1).trim() !== "" &&
+      form.accelerator_1 === form.accelerator_2
+    )
+      e.accelerator_2 = "Accelerators must be different";
+    // Accelerator date range sanity + pairing.
+    const aStart = has("accelerator_start_date");
+    const aEnd = has("accelerator_end_date");
+    if (aStart && aEnd && form.accelerator_end_date < form.accelerator_start_date)
+      e.accelerator_end_date = "End date must be after start date";
     return e;
   }, [form, isVpn]);
 
@@ -207,6 +243,8 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
         ? "orientation"
         : CONNECTION_FIELDS.has(firstBadKey)
         ? "connection"
+        : ACCELERATOR_FIELDS.has(firstBadKey)
+        ? "accelerators"
         : "testing";
       if (activeTab !== targetTab) setActiveTab(targetTab);
       alert(
@@ -238,12 +276,13 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
   const tabErrors = {
     testing:
       Object.keys(errors).some(
-        (k) => !ORIENTATION_FIELDS.has(k) && !CONNECTION_FIELDS.has(k)
+        (k) => !ORIENTATION_FIELDS.has(k) && !CONNECTION_FIELDS.has(k) && !ACCELERATOR_FIELDS.has(k)
       ) || Boolean(hoursWarnings.testing_hours),
     connection: Object.keys(errors).some((k) => CONNECTION_FIELDS.has(k)),
     orientation:
       Object.keys(errors).some((k) => ORIENTATION_FIELDS.has(k)) ||
       Boolean(hoursWarnings.orientation_hours),
+    accelerators: Object.keys(errors).some((k) => ACCELERATOR_FIELDS.has(k)),
   };
 
   return (
@@ -352,6 +391,24 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
                       {o}
                     </option>
                   ))}
+                </select>
+              </label>
+              <label>
+                <Lbl name="unit_size">Unit Size</Lbl>
+                <select
+                  value={form.unit_size}
+                  onChange={(e) => set("unit_size", e.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {unitSizeOptions.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                  {form.unit_size &&
+                    !unitSizeOptions.includes(form.unit_size) && (
+                      <option value={form.unit_size}>{form.unit_size}</option>
+                    )}
                 </select>
               </label>
               <label>
@@ -591,6 +648,141 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
                   placeholder="Long-form orientation feedback / notes."
                   onChange={(e) =>
                     set("orientation_feedback", e.target.value)
+                  }
+                />
+              </label>
+            </div>
+
+            <div
+              className="grid"
+              style={{
+                display: activeTab === "accelerators" ? "grid" : "none",
+              }}
+            >
+              <div className="section-divider">Accelerators</div>
+              <label>
+                <Lbl name="accelerator_1">Accelerator 1</Lbl>
+                <select
+                  className={ctlCls("accelerator_1")}
+                  value={form.accelerator_1}
+                  onChange={(e) => set("accelerator_1", e.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {acceleratorOptions
+                    .filter((o) => o !== form.accelerator_2)
+                    .map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  {form.accelerator_1 &&
+                    !acceleratorOptions.includes(form.accelerator_1) && (
+                      <option value={form.accelerator_1}>
+                        {form.accelerator_1}
+                      </option>
+                    )}
+                </select>
+              </label>
+              <label>
+                <Lbl name="accelerator_2">Accelerator 2</Lbl>
+                <select
+                  className={ctlCls("accelerator_2")}
+                  value={form.accelerator_2}
+                  onChange={(e) => set("accelerator_2", e.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {acceleratorOptions
+                    .filter((o) => o !== form.accelerator_1)
+                    .map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  {form.accelerator_2 &&
+                    !acceleratorOptions.includes(form.accelerator_2) && (
+                      <option value={form.accelerator_2}>
+                        {form.accelerator_2}
+                      </option>
+                    )}
+                </select>
+              </label>
+              <label>
+                <Lbl name="accelerator_start_date">Start Date</Lbl>
+                <input
+                  className={ctlCls("accelerator_start_date")}
+                  type="date"
+                  value={form.accelerator_start_date}
+                  onChange={(e) =>
+                    set("accelerator_start_date", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <Lbl name="accelerator_end_date">End Date</Lbl>
+                <input
+                  className={ctlCls("accelerator_end_date")}
+                  type="date"
+                  value={form.accelerator_end_date}
+                  onChange={(e) => set("accelerator_end_date", e.target.value)}
+                />
+              </label>
+              <label>
+                <Lbl name="accelerator_status">Status</Lbl>
+                <select
+                  value={form.accelerator_status}
+                  onChange={(e) => set("accelerator_status", e.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {acceleratorStatusOptions.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                  {form.accelerator_status &&
+                    !acceleratorStatusOptions.includes(
+                      form.accelerator_status
+                    ) && (
+                      <option value={form.accelerator_status}>
+                        {form.accelerator_status}
+                      </option>
+                    )}
+                </select>
+              </label>
+              <label>
+                <Lbl name="pm">PM</Lbl>
+                <input value={form.pm} readOnly disabled title="Set on the Testing tab" />
+              </label>
+              <label>
+                <Lbl name="accelerator_resource">Resource</Lbl>
+                <select
+                  className={ctlCls("accelerator_resource")}
+                  value={form.accelerator_resource}
+                  onChange={(e) => set("accelerator_resource", e.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {acceleratorResourceOptions.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                  {form.accelerator_resource &&
+                    !acceleratorResourceOptions.includes(
+                      form.accelerator_resource
+                    ) && (
+                      <option value={form.accelerator_resource}>
+                        {form.accelerator_resource}
+                      </option>
+                    )}
+                </select>
+              </label>
+              <label className="full">
+                <Lbl name="accelerator_comments">Comments</Lbl>
+                <textarea
+                  rows={3}
+                  value={form.accelerator_comments}
+                  placeholder="Anything worth remembering about the accelerators…"
+                  onChange={(e) =>
+                    set("accelerator_comments", e.target.value)
                   }
                 />
               </label>

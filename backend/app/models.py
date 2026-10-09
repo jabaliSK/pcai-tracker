@@ -17,9 +17,18 @@ class Engagement(Base):
     pm = Column(String(255))
     type = Column(String(100))  # VPN / Screen Share
     testing_method = Column(String(50))  # Manual / Automated
+    unit_size = Column(String(50))
 
     testing_date = Column(Date)
     orientation_date = Column(Date)
+
+    accelerator_1 = Column(String(255))
+    accelerator_2 = Column(String(255))
+    accelerator_start_date = Column(Date)
+    accelerator_end_date = Column(Date)
+    accelerator_status = Column(String(100))
+    accelerator_resource = Column(String(255))
+    accelerator_comments = Column(Text)
 
     testing_resource = Column(String(255))
     orientation_resource = Column(String(255))

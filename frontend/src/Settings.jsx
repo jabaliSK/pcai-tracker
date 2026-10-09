@@ -29,6 +29,26 @@ const CATEGORIES = [
     title: "Orientation Status",
     sub: "Status values available for orientation.",
   },
+  {
+    key: "accelerator",
+    title: "Accelerators",
+    sub: "Accelerators available to assign to an engagement.",
+  },
+  {
+    key: "accelerator_status",
+    title: "Accelerator Status",
+    sub: "Status values available for accelerators.",
+  },
+  {
+    key: "accelerator_resource",
+    title: "Accelerator Resources",
+    sub: "People available to be assigned to accelerators.",
+  },
+  {
+    key: "unit_size",
+    title: "Unit Size",
+    sub: "Unit sizes available to assign to an engagement.",
+  },
 ];
 
 function OptionEditor({ meta, values, onSave, readOnly }) {

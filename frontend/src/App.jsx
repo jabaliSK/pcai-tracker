@@ -49,7 +49,7 @@ import {
   IconSun,
   IconTimer,
 } from "./Icons";
-import { Avatar, fmtDuration } from "./ui";
+import { Avatar, Badge, fmtDuration } from "./ui";
 
 const PAGES = {
   recent: {
@@ -301,6 +301,7 @@ export default function App() {
 
   const [sortKey, setSortKey] = useState("updated_at");
   const [sortDir, setSortDir] = useState("desc");
+  const [listTab, setListTab] = useState("overall");
   const [fltCustomer, setFltCustomer] = useState("");
   const [fltResource, setFltResource] = useState("");
   const [fltStatus, setFltStatus] = useState("");
@@ -761,6 +762,26 @@ export default function App() {
               </span>
             </div>
 
+            <div className="form-tabs" role="tablist">
+              {[
+                { key: "overall", label: "Overall" },
+                { key: "testing", label: "Testing Details" },
+                { key: "accelerators", label: "Accelerators" },
+              ].map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={listTab === t.key}
+                  className={"form-tab" + (listTab === t.key ? " active" : "")}
+                  onClick={() => setListTab(t.key)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {listTab === "overall" && (
             <div className="table-card">
               <div className="table-scroll">
                 <table>
@@ -1002,6 +1023,169 @@ export default function App() {
                 </table>
               </div>
             </div>
+            )}
+
+            {listTab === "testing" && (
+              <div className="table-card">
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Customer</th>
+                        <th>PM</th>
+                        <th>Type</th>
+                        <th>Date</th>
+                        <th>Method</th>
+                        <th>Size</th>
+                        <th>Resource</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!loading && displayRows.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="table-msg">
+                            <div className="empty">
+                              <IconInbox />
+                              <span className="empty-title">
+                                No engagements found
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {!loading &&
+                        displayRows.map((row) => (
+                          <tr
+                            key={row.uid}
+                            className={rowEval(row, today).cls}
+                            onClick={() => setSelected(row)}
+                          >
+                            <td className="cust-cell">{row.customer}</td>
+                            <td>
+                              {row.pm || <span className="cell-empty">—</span>}
+                            </td>
+                            <td>
+                              {row.type || <span className="cell-empty">—</span>}
+                            </td>
+                            <td>
+                              {fmtDate(row.testing_date) || (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td>
+                              {row.testing_method || (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td>
+                              {row.unit_size || (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td title={row.testing_resource || ""}>
+                              {row.testing_resource ? (
+                                <span className="res-cell">
+                                  <Avatar name={row.testing_resource} />
+                                  <span>{row.testing_resource}</span>
+                                </span>
+                              ) : (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td>
+                              <Badge status={row.testing_status} />
+                            </td>
+                            <td>
+                              <span
+                                className="timer"
+                                title="Total testing + orientation duration (hh:mm)"
+                              >
+                                {fmtHM(totalDuration(row))}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {listTab === "accelerators" && (
+              <div className="table-card">
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Customer</th>
+                        <th>PM</th>
+                        <th>Size</th>
+                        <th>Resource</th>
+                        <th>Status</th>
+                        <th>Start Date</th>
+                        <th>End Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!loading && displayRows.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="table-msg">
+                            <div className="empty">
+                              <IconInbox />
+                              <span className="empty-title">
+                                No engagements found
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {!loading &&
+                        displayRows.map((row) => (
+                          <tr
+                            key={row.uid}
+                            onClick={() => setSelected(row)}
+                          >
+                            <td className="cust-cell">{row.customer}</td>
+                            <td>
+                              {row.pm || <span className="cell-empty">—</span>}
+                            </td>
+                            <td>
+                              {row.unit_size || (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td title={row.accelerator_resource || ""}>
+                              {row.accelerator_resource ? (
+                                <span className="res-cell">
+                                  <Avatar name={row.accelerator_resource} />
+                                  <span>{row.accelerator_resource}</span>
+                                </span>
+                              ) : (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td>
+                              <Badge status={row.accelerator_status} />
+                            </td>
+                            <td>
+                              {fmtDate(row.accelerator_start_date) || (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                            <td>
+                              {fmtDate(row.accelerator_end_date) || (
+                                <span className="cell-empty">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

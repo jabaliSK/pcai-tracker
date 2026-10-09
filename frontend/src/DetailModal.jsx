@@ -65,6 +65,7 @@ const TABS = [
   { key: "testing", label: "Testing" },
   { key: "connection", label: "Connection" },
   { key: "orientation", label: "Orientation" },
+  { key: "accelerators", label: "Accelerators" },
 ];
 
 export default function DetailModal({ record, onClose, onEdit, onDelete }) {
@@ -146,6 +147,7 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
                 missing={mi("testing_date")}
               />
               <Item label="Testing Method" value={record.testing_method} />
+              <Item label="Unit Size" value={record.unit_size} />
               <Item
                 label="Testing Resource"
                 value={record.testing_resource}
@@ -273,6 +275,46 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
                 label="Orientation Feedback"
                 value={record.orientation_feedback}
                 missing={mi("orientation_feedback")}
+                full
+              />
+            </div>
+          </div>
+
+          <div
+            style={{ display: activeTab === "accelerators" ? "block" : "none" }}
+          >
+            <div className="detail-grid">
+              <div className="detail-section-title">Accelerators</div>
+              <Item label="Accelerator 1" value={record.accelerator_1} />
+              <Item label="Accelerator 2" value={record.accelerator_2} />
+              <Item
+                label="Status"
+                value={record.accelerator_status}
+              >
+                {record.accelerator_status ? (
+                  <Badge status={record.accelerator_status} />
+                ) : null}
+              </Item>
+              <Item
+                label="Start Date"
+                value={fmtDate(record.accelerator_start_date)}
+              />
+              <Item
+                label="End Date"
+                value={fmtDate(record.accelerator_end_date)}
+              />
+              <Item label="Resource" value={record.accelerator_resource}>
+                {record.accelerator_resource ? (
+                  <span className="res-cell">
+                    <Avatar name={record.accelerator_resource} />
+                    <span>{record.accelerator_resource}</span>
+                  </span>
+                ) : null}
+              </Item>
+              <Item label="PM" value={record.pm} missing={mi("pm")} />
+              <Item
+                label="Comments"
+                value={record.accelerator_comments}
                 full
               />
             </div>
