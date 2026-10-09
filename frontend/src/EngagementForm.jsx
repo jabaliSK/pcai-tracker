@@ -1,9 +1,82 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { IconAlert, IconClose } from "./Icons";
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { IconAlert, IconCheck, IconChevron, IconClose } from "./Icons";
 
 const TYPE_OPTIONS = ["VPN", "Screen Share"];
 const METHOD_OPTIONS = ["Manual", "Automated"];
 const DEFAULT_STATUS = ["Pending", "In Progress", "Paused", "Blocked", "Done"];
+
+// Parse a comma-separated multi-value string into a trimmed list.
+function parseList(s) {
+  return String(s || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function MultiSelect({ options, value, onChange, placeholder = "— Select —" }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = parseList(value);
+
+  useEffect(() => {
+    function onDoc(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  // Keep any already-selected values that are no longer in the option list.
+  const allOptions = [...options];
+  for (const s of selected) if (!allOptions.includes(s)) allOptions.push(s);
+
+  function toggle(opt) {
+    const next = selected.includes(opt)
+      ? selected.filter((x) => x !== opt)
+      : [...selected, opt];
+    onChange(next.join(", "));
+  }
+
+  return (
+    <div className="multiselect" ref={ref}>
+      <button
+        type="button"
+        className={"multiselect-control" + (open ? " open" : "")}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span
+          className={"multiselect-value" + (selected.length ? "" : " empty")}
+        >
+          {selected.length ? selected.join(", ") : placeholder}
+        </span>
+        <IconChevron size={14} />
+      </button>
+      {open && (
+        <div className="multiselect-menu">
+          {allOptions.length === 0 && (
+            <div className="multiselect-empty">No options</div>
+          )}
+          {allOptions.map((opt) => {
+            const on = selected.includes(opt);
+            return (
+              <button
+                key={opt}
+                type="button"
+                className={"multiselect-opt" + (on ? " on" : "")}
+                onClick={() => toggle(opt)}
+              >
+                <span className="multiselect-check">
+                  {on && <IconCheck size={13} />}
+                </span>
+                <span>{opt}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function todayISO() {
   const d = new Date();
@@ -754,26 +827,11 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
               </label>
               <label>
                 <Lbl name="accelerator_resource">Resource</Lbl>
-                <select
-                  className={ctlCls("accelerator_resource")}
+                <MultiSelect
+                  options={acceleratorResourceOptions}
                   value={form.accelerator_resource}
-                  onChange={(e) => set("accelerator_resource", e.target.value)}
-                >
-                  <option value="">— Select —</option>
-                  {acceleratorResourceOptions.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
-                    </option>
-                  ))}
-                  {form.accelerator_resource &&
-                    !acceleratorResourceOptions.includes(
-                      form.accelerator_resource
-                    ) && (
-                      <option value={form.accelerator_resource}>
-                        {form.accelerator_resource}
-                      </option>
-                    )}
-                </select>
+                  onChange={(v) => set("accelerator_resource", v)}
+                />
               </label>
               <label className="full">
                 <Lbl name="accelerator_comments">Comments</Lbl>

@@ -1158,9 +1158,17 @@ export default function App() {
                             </td>
                             <td title={row.accelerator_resource || ""}>
                               {row.accelerator_resource ? (
-                                <span className="res-cell">
-                                  <Avatar name={row.accelerator_resource} />
-                                  <span>{row.accelerator_resource}</span>
+                                <span className="res-cell-multi">
+                                  {String(row.accelerator_resource)
+                                    .split(",")
+                                    .map((x) => x.trim())
+                                    .filter(Boolean)
+                                    .map((name) => (
+                                      <span className="res-cell" key={name}>
+                                        <Avatar name={name} />
+                                        <span>{name}</span>
+                                      </span>
+                                    ))}
                                 </span>
                               ) : (
                                 <span className="cell-empty">—</span>

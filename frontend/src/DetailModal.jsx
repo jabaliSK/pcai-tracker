@@ -305,9 +305,17 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
               />
               <Item label="Resource" value={record.accelerator_resource}>
                 {record.accelerator_resource ? (
-                  <span className="res-cell">
-                    <Avatar name={record.accelerator_resource} />
-                    <span>{record.accelerator_resource}</span>
+                  <span className="res-cell-multi">
+                    {String(record.accelerator_resource)
+                      .split(",")
+                      .map((x) => x.trim())
+                      .filter(Boolean)
+                      .map((name) => (
+                        <span className="res-cell" key={name}>
+                          <Avatar name={name} />
+                          <span>{name}</span>
+                        </span>
+                      ))}
                   </span>
                 ) : null}
               </Item>
