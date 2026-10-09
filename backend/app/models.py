@@ -29,6 +29,7 @@ class Engagement(Base):
     accelerator_status = Column(String(100))
     accelerator_resource = Column(String(255))
     accelerator_comments = Column(Text)
+    accelerator_connection = Column(String(50))  # VPN / Screen Share
 
     testing_resource = Column(String(255))
     orientation_resource = Column(String(255))

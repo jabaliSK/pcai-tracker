@@ -320,6 +320,7 @@ export default function DetailModal({ record, onClose, onEdit, onDelete }) {
                 ) : null}
               </Item>
               <Item label="PM" value={record.pm} missing={mi("pm")} />
+              <Item label="Deployment" value={record.accelerator_connection} />
               <Item
                 label="Comments"
                 value={record.accelerator_comments}

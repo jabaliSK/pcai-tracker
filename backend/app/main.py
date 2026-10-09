@@ -177,6 +177,7 @@ def _run_migrations():
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_status VARCHAR(100)",
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_resource VARCHAR(255)",
         "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_comments TEXT",
+        "ALTER TABLE engagements ADD COLUMN IF NOT EXISTS accelerator_connection VARCHAR(50)",
         "ALTER TABLE engagements ALTER COLUMN testing_hours TYPE double precision USING testing_hours::double precision",
         "ALTER TABLE engagements ALTER COLUMN orientation_hours TYPE double precision USING orientation_hours::double precision",
         "ALTER TABLE status_events ADD COLUMN IF NOT EXISTS kind VARCHAR(20) DEFAULT 'testing'",

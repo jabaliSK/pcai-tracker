@@ -107,6 +107,7 @@ const EMPTY = {
   accelerator_status: "",
   accelerator_resource: "",
   accelerator_comments: "",
+  accelerator_connection: "",
   vpn_app_ip: "",
   vpn_user: "",
   vpn_pass: "",
@@ -160,6 +161,7 @@ const ACCELERATOR_FIELDS = new Set([
   "accelerator_status",
   "accelerator_resource",
   "accelerator_comments",
+  "accelerator_connection",
 ]);
 
 const TABS = [
@@ -824,6 +826,22 @@ export default function EngagementForm({ initial, options, allowHoursEdit, onCan
               <label>
                 <Lbl name="pm">PM</Lbl>
                 <input value={form.pm} readOnly disabled title="Set on the Testing tab" />
+              </label>
+              <label>
+                <Lbl name="accelerator_connection">Deployment</Lbl>
+                <select
+                  value={form.accelerator_connection}
+                  onChange={(e) =>
+                    set("accelerator_connection", e.target.value)
+                  }
+                >
+                  <option value="">— Select —</option>
+                  {TYPE_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 <Lbl name="accelerator_resource">Resource</Lbl>

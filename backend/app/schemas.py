@@ -18,6 +18,7 @@ class EngagementBase(BaseModel):
     accelerator_status: Optional[str] = None
     accelerator_resource: Optional[str] = None
     accelerator_comments: Optional[str] = None
+    accelerator_connection: Optional[str] = None
     testing_resource: Optional[str] = None
     orientation_resource: Optional[str] = None
     vpn_app_ip: Optional[str] = None
@@ -53,6 +54,7 @@ class EngagementUpdate(BaseModel):
     accelerator_status: Optional[str] = None
     accelerator_resource: Optional[str] = None
     accelerator_comments: Optional[str] = None
+    accelerator_connection: Optional[str] = None
     testing_resource: Optional[str] = None
     orientation_resource: Optional[str] = None
     vpn_app_ip: Optional[str] = None
